@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Gemini Chat Exporter",
+  "description": "Exports a Gemini chat conversation to a Markdown file.",
+  "version": "1.0",
+  "permissions": [
+    "scripting",
+    "activeTab",
+    "clipboardRead",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "https://gemini.google.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["content_script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
