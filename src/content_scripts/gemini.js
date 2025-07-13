@@ -1,71 +1,56 @@
-// Gemini Chat Exporter Chrome Extension - Content Script
-// Adds an 'Export Chat' button to Gemini chat pages, allowing users to export the full conversation to Markdown.
-// Copyright (c) 2025 amazingpaddy
-// License: Apache-2.0
+// Gemini Chat Exporter - Gemini content script
+// Injects export button and handles export for Gemini chat
 
-/**
- * Ensures the Export Chat button is present on the page.
- * The button is injected at the top right (not overlapping the profile icon) and triggers the export process.
- */
-function ensureExportBtn() {
-  let exportBtn = document.getElementById('gemini-export-btn');
-  if (!exportBtn) {
-    exportBtn = document.createElement('button');
-    exportBtn.id = 'gemini-export-btn';
-    exportBtn.textContent = 'Export Chat';
-    exportBtn.style.position = 'fixed';
-    exportBtn.style.top = '20px'; // moved down to avoid profile icon
-    exportBtn.style.right = '120px'; // moved left to avoid profile icon
-    exportBtn.style.zIndex = '9999';
-    exportBtn.style.padding = '8px 16px';
-    exportBtn.style.background = '#1a73e8';
-    exportBtn.style.color = '#fff';
-    exportBtn.style.border = 'none';
-    exportBtn.style.borderRadius = '6px';
-    exportBtn.style.fontSize = '1em';
-    exportBtn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
-    exportBtn.style.cursor = 'pointer';
-    exportBtn.style.fontWeight = 'bold';
-    exportBtn.style.transition = 'background 0.2s';
-    exportBtn.onmouseenter = () => exportBtn.style.background = '#1765c1';
-    exportBtn.onmouseleave = () => exportBtn.style.background = '#1a73e8';
-    exportBtn.addEventListener('click', runGeminiExport);
-    document.body.appendChild(exportBtn);
-  }
-}
-
-// Observe DOM changes to re-inject the button if needed (for SPA navigation)
-ensureExportBtn();
-const observer = new MutationObserver(() => ensureExportBtn());
-observer.observe(document.body, { childList: true, subtree: true });
-
-/**
- * Handles the export button click: disables the button, shows progress, and runs the export.
- */
-async function runGeminiExport() {
-  const exportBtn = document.getElementById('gemini-export-btn');
-  if (exportBtn) {
-    exportBtn.disabled = true;
-    exportBtn.textContent = 'Exporting...';
-  }
-  try {
-    await geminiExportMain();
-  } finally {
-    if (exportBtn) {
-      exportBtn.disabled = false;
-      exportBtn.textContent = 'Export Chat';
+function addExportButton({ id, buttonText, position, exportHandler }) {
+  function ensureBtn() {
+    let btn = document.getElementById(id);
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.id = id;
+      btn.textContent = buttonText;
+      btn.style.position = 'fixed';
+      btn.style.top = position.top;
+      btn.style.right = position.right;
+      btn.style.zIndex = '9999';
+      btn.style.padding = '8px 16px';
+      btn.style.background = '#1a73e8';
+      btn.style.color = '#fff';
+      btn.style.border = 'none';
+      btn.style.borderRadius = '6px';
+      btn.style.fontSize = '1em';
+      btn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
+      btn.style.cursor = 'pointer';
+      btn.style.fontWeight = 'bold';
+      btn.style.transition = 'background 0.2s';
+      btn.onmouseenter = () => btn.style.background = '#1765c1';
+      btn.onmouseleave = () => btn.style.background = '#1a73e8';
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = 'Exporting...';
+        try {
+          await exportHandler();
+        } finally {
+          btn.disabled = false;
+          btn.textContent = buttonText;
+        }
+      });
+      document.body.appendChild(btn);
     }
   }
+  ensureBtn();
+  const observer = new MutationObserver(() => ensureBtn());
+  observer.observe(document.body, { childList: true, subtree: true });
 }
 
-/**
- * Main export logic: scrolls to load all chat, copies each turn, and downloads as Markdown.
- */
-async function geminiExportMain() {
-  // Utility: sleep for a given number of milliseconds
-  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+addExportButton({
+  id: 'gemini-export-btn',
+  buttonText: 'Export Chat',
+  position: { top: '80px', right: '20px' },
+  exportHandler: geminiExportMain
+});
 
-  // Utility: remove Gemini citation markers from text
+async function geminiExportMain() {
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
   function removeCitations(text) {
     return text
       .replace(/\[cite_start\]/g, '')
@@ -73,8 +58,6 @@ async function geminiExportMain() {
       .replace(/\n{3,}/g, '\n\n')
       .trim();
   }
-
-  // Step 1: Scroll to load full chat history
   const scrollContainer = document.querySelector('[data-test-id="chat-history-container"]');
   if (!scrollContainer) {
     alert('Could not find chat history container. Are you on a Gemini chat page?');
@@ -100,25 +83,19 @@ async function geminiExportMain() {
     lastScrollTop = scrollTop;
     scrollAttempts++;
   }
-
-  // Step 2: Gather all conversation turns and build Markdown
   const turns = Array.from(document.querySelectorAll('div.conversation-container'));
   let markdown = `# Gemini Chat Export\n\n> Exported on: ${new Date().toLocaleString()}\n\n---\n\n`;
-
   for (let i = 0; i < turns.length; i++) {
     const turn = turns[i];
-    // User query
     let userQuery = '';
     const userQueryElem = turn.querySelector('user-query');
     if (userQueryElem) {
       userQuery = userQueryElem.textContent.trim();
       markdown += `## 👤 You\n\n${userQuery}\n\n`;
     }
-    // Model response
     let modelResponse = '';
     const modelRespElem = turn.querySelector('model-response');
     if (modelRespElem) {
-      // Simulate hover to reveal copy button
       modelRespElem.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
       await sleep(500);
       const copyBtn = turn.querySelector('button[data-test-id="copy-button"]');
@@ -140,8 +117,7 @@ async function geminiExportMain() {
     }
     markdown += '---\n\n';
   }
-
-  // Step 3: Download as Markdown file
+  // Download as Markdown file
   const blob = new Blob([markdown], { type: 'text/markdown' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

@@ -1,14 +1,10 @@
-# Gemini Chat Exporter
 
-Gemini Chat Exporter is a Chrome Extension that allows you to export your entire Gemini chat conversation to a well-formatted Markdown file with a single click.
+# AI Chat Exporter
+
+AI Chat Exporter is a Chrome Extension that allows you to export your entire Gemini or ChatGPT chat conversation (all messages in a single chat) to a well-formatted Markdown file with a single click.
 
 ## Features
 
-- Export your full Gemini chat history to Markdown, preserving formatting (code, tables, LaTeX, etc.)
-- Dedicated "Export Chat" button appears automatically on every Gemini chat page
-- Robust export logic: loads all chat history, copies perfectly formatted responses, and removes Gemini citation markers
-- No build step required
-- Open source under the Apache License 2.0
 
 ## Installation
 
@@ -23,18 +19,26 @@ Gemini Chat Exporter is a Chrome Extension that allows you to export your entire
    - Click "Load unpacked" and select the folder where you unzipped the extension files
 
 3. **You're done!**
-   - The "Export Chat" button will now appear on every Gemini chat page
+   - The "Export Chat" button will now appear on every Gemini and ChatGPT chat page
 
+Support for other LLMs like DeepSeek, Claude, and Grok will be added in future updates.
 ## Usage
 
-1. Go to [Gemini](https://gemini.google.com/) and open any chat
+### Gemini
+1. Go to [Gemini](https://gemini.google.com/) and open any chat conversation
 2. Click the "Export Chat" button at the top right of the page (it will not overlap your profile icon)
 3. Wait for the export to complete. The button will show "Exporting..." during the process
-4. A Markdown file (`gemini_chat_export.md`) will be downloaded automatically with your full chat history
+4. A Markdown file (`gemini_chat_export.md`) will be downloaded automatically with all messages from the current chat conversation
+
+### ChatGPT
+1. Go to [ChatGPT](https://chatgpt.com/) and open any chat conversation
+2. Click the "Export Chat" button at the top right of the page
+3. Wait for the export to complete. The button will show "Exporting..." during the process
+4. A Markdown file (`chatgpt_chat_export.md`) will be downloaded automatically with all messages from the current chat conversation
 
 ## Permissions
 
-This extension requires clipboard access permission (`clipboardRead`) in order to copy Gemini responses using the built-in copy button. This is necessary for exporting perfectly formatted chat content.
+This extension requires clipboard access permission (`clipboardRead`) in order to copy Gemini and ChatGPT responses using the built-in copy button. This is necessary for exporting perfectly formatted chat content.
 
 ## Contributing
 
