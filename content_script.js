@@ -1,8 +1,12 @@
-// Gemini Chat Exporter Content Script
-// Translated from the final Selenium Python script
+// Gemini Chat Exporter Chrome Extension - Content Script
+// Adds an 'Export Chat' button to Gemini chat pages, allowing users to export the full conversation to Markdown.
+// Copyright (c) 2025 amazingpaddy
+// License: Apache-2.0
 
-// Inject Export button at top right if not already present
-
+/**
+ * Ensures the Export Chat button is present on the page.
+ * The button is injected at the top right (not overlapping the profile icon) and triggers the export process.
+ */
 function ensureExportBtn() {
   let exportBtn = document.getElementById('gemini-export-btn');
   if (!exportBtn) {
@@ -10,8 +14,8 @@ function ensureExportBtn() {
     exportBtn.id = 'gemini-export-btn';
     exportBtn.textContent = 'Export Chat';
     exportBtn.style.position = 'fixed';
-    exportBtn.style.top = '20px'; // moved down
-    exportBtn.style.right = '120px'; // moved left
+    exportBtn.style.top = '20px'; // moved down to avoid profile icon
+    exportBtn.style.right = '120px'; // moved left to avoid profile icon
     exportBtn.style.zIndex = '9999';
     exportBtn.style.padding = '8px 16px';
     exportBtn.style.background = '#1a73e8';
@@ -30,12 +34,14 @@ function ensureExportBtn() {
   }
 }
 
-// Always ensure the button is present (in case of SPA navigation)
+// Observe DOM changes to re-inject the button if needed (for SPA navigation)
 ensureExportBtn();
 const observer = new MutationObserver(() => ensureExportBtn());
 observer.observe(document.body, {childList: true, subtree: true});
 
-
+/**
+ * Handles the export button click: disables the button, shows progress, and runs the export.
+ */
 async function runGeminiExport() {
   const exportBtn = document.getElementById('gemini-export-btn');
   if (exportBtn) {
@@ -52,10 +58,14 @@ async function runGeminiExport() {
   }
 }
 
+/**
+ * Main export logic: scrolls to load all chat, copies each turn, and downloads as Markdown.
+ */
 async function geminiExportMain() {
+  // Utility: sleep for a given number of milliseconds
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-  // Remove Gemini citation markers (ported from Python)
+  // Utility: remove Gemini citation markers from text
   function removeCitations(text) {
     return text
       .replace(/\[cite_start\]/g, '')
@@ -64,7 +74,7 @@ async function geminiExportMain() {
       .trim();
   }
 
-  // 1. Scroll to load full chat history
+  // Step 1: Scroll to load full chat history
   const scrollContainer = document.querySelector('[data-test-id="chat-history-container"]');
   if (!scrollContainer) {
     alert('Could not find chat history container. Are you on a Gemini chat page?');
@@ -91,7 +101,7 @@ async function geminiExportMain() {
     scrollAttempts++;
   }
 
-  // 2. Gather all conversation turns
+  // Step 2: Gather all conversation turns and build Markdown
   const turns = Array.from(document.querySelectorAll('div.conversation-container'));
   let markdown = `# Gemini Chat Export\n\n> Exported on: ${new Date().toLocaleString()}\n\n---\n\n`;
 
@@ -108,7 +118,7 @@ async function geminiExportMain() {
     let modelResponse = '';
     const modelRespElem = turn.querySelector('model-response');
     if (modelRespElem) {
-      // Simulate hover to reveal copy button (move mouse over the center of modelRespElem)
+      // Simulate hover to reveal copy button
       const rect = modelRespElem.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
@@ -118,7 +128,7 @@ async function geminiExportMain() {
         clientY: centerY
       });
       modelRespElem.dispatchEvent(mouseOverEvent);
-      // Actually move the mouse pointer using elementFromPoint (triggers :hover CSS)
+      // Move mouse pointer using elementFromPoint (triggers :hover CSS)
       const elAtPoint = document.elementFromPoint(centerX, centerY);
       if (elAtPoint && elAtPoint !== modelRespElem) {
         elAtPoint.dispatchEvent(new MouseEvent('mouseover', {
@@ -158,7 +168,7 @@ async function geminiExportMain() {
     markdown += '---\n\n';
   }
 
-  // 3. Download as Markdown file
+  // Step 3: Download as Markdown file
   const blob = new Blob([markdown], {type: 'text/markdown'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
