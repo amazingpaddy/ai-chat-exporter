@@ -17,13 +17,16 @@ jobs:
       - name: Create zip of extension files
         run: |
           mkdir dist
-          cp -r manifest.json popup.html popup.js content_script.js icons dist/
+          cp manifest.json dist/
+          cp -r icons dist/
+          mkdir -p dist/src/content_scripts
+          cp src/content_scripts/*.js dist/src/content_scripts/
           cd dist
-          zip -r ../gemini-chat-exporter.zip .
+          zip -r ../ai-chat-exporter.zip .
 
       - name: Upload zip to release
         uses: softprops/action-gh-release@v2
         with:
-          files: gemini-chat-exporter.zip
+          files: ai-chat-exporter.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
