@@ -10,7 +10,7 @@ function ensureExportBtn() {
     exportBtn.id = 'gemini-export-btn';
     exportBtn.textContent = 'Export Chat';
     exportBtn.style.position = 'fixed';
-    exportBtn.style.top = '56px'; // moved down
+    exportBtn.style.top = '20px'; // moved down
     exportBtn.style.right = '120px'; // moved left
     exportBtn.style.zIndex = '9999';
     exportBtn.style.padding = '8px 16px';
