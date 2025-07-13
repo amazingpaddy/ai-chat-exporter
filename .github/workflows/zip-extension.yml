@@ -3,6 +3,9 @@ name: Zip Chrome Extension and Upload to Release
 on:
   release:
     types: [published]
+    
+permissions:
+  contents: write
 
 jobs:
   build-and-zip:
