@@ -37,7 +37,7 @@ function ensureExportBtn() {
 // Observe DOM changes to re-inject the button if needed (for SPA navigation)
 ensureExportBtn();
 const observer = new MutationObserver(() => ensureExportBtn());
-observer.observe(document.body, {childList: true, subtree: true});
+observer.observe(document.body, { childList: true, subtree: true });
 
 /**
  * Handles the export button click: disables the button, shows progress, and runs the export.
@@ -119,37 +119,10 @@ async function geminiExportMain() {
     const modelRespElem = turn.querySelector('model-response');
     if (modelRespElem) {
       // Simulate hover to reveal copy button
-      const rect = modelRespElem.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const mouseOverEvent = new MouseEvent('mouseover', {
-        bubbles: true,
-        clientX: centerX,
-        clientY: centerY
-      });
-      modelRespElem.dispatchEvent(mouseOverEvent);
-      // Move mouse pointer using elementFromPoint (triggers :hover CSS)
-      const elAtPoint = document.elementFromPoint(centerX, centerY);
-      if (elAtPoint && elAtPoint !== modelRespElem) {
-        elAtPoint.dispatchEvent(new MouseEvent('mouseover', {
-          bubbles: true,
-          clientX: centerX,
-          clientY: centerY
-        }));
-      }
+      modelRespElem.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
       await sleep(500);
       const copyBtn = turn.querySelector('button[data-test-id="copy-button"]');
       if (copyBtn) {
-        // Move mouse over the copy button to ensure it's enabled
-        const btnRect = copyBtn.getBoundingClientRect();
-        const btnCenterX = btnRect.left + btnRect.width / 2;
-        const btnCenterY = btnRect.top + btnRect.height / 2;
-        copyBtn.dispatchEvent(new MouseEvent('mouseover', {
-          bubbles: true,
-          clientX: btnCenterX,
-          clientY: btnCenterY
-        }));
-        await sleep(200);
         copyBtn.click();
         await sleep(500);
         try {
@@ -169,7 +142,7 @@ async function geminiExportMain() {
   }
 
   // Step 3: Download as Markdown file
-  const blob = new Blob([markdown], {type: 'text/markdown'});
+  const blob = new Blob([markdown], { type: 'text/markdown' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
