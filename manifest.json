@@ -6,8 +6,7 @@
   "permissions": [
     "scripting",
     "activeTab",
-    "clipboardRead",
-    "clipboardWrite"
+    "clipboardRead"
   ],
   "host_permissions": [
     "https://gemini.google.com/*"
