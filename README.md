@@ -47,7 +47,3 @@ Contributions are welcome! Please open an issue or submit a pull request.
 ## License
 
 This project is licensed under the [Apache License 2.0](LICENSE).
-
-## Attribution
-
-<a href="https://www.flaticon.com/free-icons/export" title="export icons">Export icons created by Parzival’ 1997 - Flaticon</a>
