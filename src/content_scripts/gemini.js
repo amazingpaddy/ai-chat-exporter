@@ -1,9 +1,15 @@
 // Gemini Chat Exporter - Gemini content script
 // Injects export button and handles export for Gemini chat
 
+
 function addExportButton({ id, buttonText, position, exportHandler }) {
-  function ensureBtn() {
+  let observer;
+  function ensureBtn(shouldShow) {
     let btn = document.getElementById(id);
+    if (!shouldShow) {
+      if (btn) btn.style.display = 'none';
+      return;
+    }
     if (!btn) {
       btn = document.createElement('button');
       btn.id = id;
@@ -35,11 +41,23 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
         }
       });
       document.body.appendChild(btn);
+    } else {
+      btn.style.display = '';
     }
   }
-  ensureBtn();
-  const observer = new MutationObserver(() => ensureBtn());
+  function updateBtnFromStorage() {
+    chrome.storage.sync.get(['hideExportBtn'], (result) => {
+      ensureBtn(!result.hideExportBtn);
+    });
+  }
+  updateBtnFromStorage();
+  observer = new MutationObserver(() => updateBtnFromStorage());
   observer.observe(document.body, { childList: true, subtree: true });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync' && 'hideExportBtn' in changes) {
+      updateBtnFromStorage();
+    }
+  });
 }
 
 addExportButton({

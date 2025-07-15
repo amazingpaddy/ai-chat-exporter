@@ -6,7 +6,8 @@
   "permissions": [
     "scripting",
     "activeTab",
-    "clipboardRead"
+    "clipboardRead",
+    "storage"
   ],
   "host_permissions": [
     "https://gemini.google.com/*",
@@ -29,5 +30,7 @@
       "run_at": "document_idle"
     }
   ],
-  "action": {}
+  "action": {
+    "default_popup": "popup.html"
+  }
 }
