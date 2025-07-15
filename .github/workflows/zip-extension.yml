@@ -18,6 +18,7 @@ jobs:
         run: |
           mkdir dist
           cp manifest.json dist/
+          cp popup.html popup.js dist/
           cp -r icons dist/
           mkdir -p dist/src/content_scripts
           cp src/content_scripts/*.js dist/src/content_scripts/

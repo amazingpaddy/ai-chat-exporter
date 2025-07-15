@@ -98,7 +98,24 @@ async function chatgptExportMain() {
   }
   // Step 2: Gather all conversation turns and build Markdown
   const turns = Array.from(document.querySelectorAll('article[data-testid^="conversation-turn-"]'));
-  let markdown = `# ChatGPT Chat Export\n\n> Exported on: ${new Date().toLocaleString()}\n\n---\n\n`;
+  // Get conversation title from <title>
+  let title = document.title ? document.title.trim() : '';
+  let markdown = '';
+  let filename = 'chatgpt_chat_export.md';
+  if (title) {
+    markdown += `# ${title}\n\n`;
+    // Sanitize title for filename: replace spaces with _, remove periods and forbidden chars
+    let safeTitle = title
+      .replace(/[\\/:*?"<>|.]/g, '') // forbidden chars and periods
+      .replace(/\s+/g, '_')
+      .replace(/^_+|_+$/g, ''); // trim leading/trailing underscores
+    if (safeTitle.length > 0) {
+      filename = `${safeTitle}.md`;
+    }
+  } else {
+    markdown += `# ChatGPT Chat Export\n\n`;
+  }
+  markdown += `> Exported on: ${new Date().toLocaleString()}\n\n---\n\n`;
   for (let i = 0; i < turns.length; i++) {
     const turn = turns[i];
     // User message
@@ -140,7 +157,7 @@ async function chatgptExportMain() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'chatgpt_chat_export.md';
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   setTimeout(() => {
