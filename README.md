@@ -35,13 +35,13 @@ Support for other LLMs like DeepSeek, Claude, and Grok will be added in future u
 1. Go to [Gemini](https://gemini.google.com/) and open any chat conversation
 2. Click the "Export Chat" button at the top right of the page (it will not overlap your profile icon)
 3. Wait for the export to complete. The button will show "Exporting..." during the process
-4. A Markdown file (`gemini_chat_export.md`) will be downloaded automatically with all messages from the current chat conversation. (Gemini does not provide a reliable conversation title, so a generic filename and heading are used.)
+4. A Markdown file will be downloaded automatically with all messages from the current chat conversation. The filename will be in the format `gemini_chat_export_YYYY-MM-DD_HHMMSS.md` (e.g., `gemini_chat_export_2025-07-16_153012.md`). This ensures each export is unique, even if you update and export the same conversation again.
 
 ### ChatGPT
 1. Go to [ChatGPT](https://chatgpt.com/) and open any chat conversation
 2. Click the "Export Chat" button at the top right of the page
 3. Wait for the export to complete. The button will show "Exporting..." during the process
-4. A Markdown file will be downloaded automatically with all messages from the current chat conversation. The filename and heading will match the conversation title (spaces replaced with underscores, invalid filename characters removed).
+4. A Markdown file will be downloaded automatically with all messages from the current chat conversation. The filename and heading will match the conversation title (spaces replaced with underscores, invalid filename characters removed), and a timestamp will be appended for uniqueness. The format is `<chat_title>_YYYY-MM-DD_HHMMSS.md` (e.g., `My_Chat_Title_2025-07-16_153012.md`). This ensures each export is unique, even if you update and export the same conversation again.
 
 ## Permissions
 

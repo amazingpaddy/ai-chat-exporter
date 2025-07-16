@@ -135,7 +135,12 @@ async function chatgptExportMain() {
   // Get conversation title from <title>
   let title = document.title ? document.title.trim() : '';
   let markdown = '';
+  // Default filename if no title
   let filename = 'chatgpt_chat_export.md';
+  // Get current timestamp for filename
+  const now = new Date();
+  const pad = n => n.toString().padStart(2, '0');
+  const timestamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
   if (title) {
     markdown += `# ${title}\n\n`;
     // Sanitize title for filename: replace spaces with _, remove periods and forbidden chars
@@ -144,10 +149,13 @@ async function chatgptExportMain() {
       .replace(/\s+/g, '_')
       .replace(/^_+|_+$/g, ''); // trim leading/trailing underscores
     if (safeTitle.length > 0) {
-      filename = `${safeTitle}.md`;
+      filename = `${safeTitle}_${timestamp}.md`;
+    } else {
+      filename = `chatgpt_chat_export_${timestamp}.md`;
     }
   } else {
     markdown += `# ChatGPT Chat Export\n\n`;
+    filename = `chatgpt_chat_export_${timestamp}.md`;
   }
   markdown += `> Exported on: ${new Date().toLocaleString()}\n\n---\n\n`;
   // Build Markdown for each turn

@@ -176,11 +176,11 @@ async function geminiExportMain() {
     }
     markdown += '---\n\n';
   }
-  // Build output filename with current date/time
+  // Build output filename with current date/time in YYYY-MM-DD_HHMMSS format
   function getDateString() {
     const d = new Date();
     const pad = n => n.toString().padStart(2, '0');
-    return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   }
   const filename = `gemini_chat_export_${getDateString()}.md`;
 
