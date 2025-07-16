@@ -1,7 +1,24 @@
-// ChatGPT Chat Exporter - ChatGPT content script
-// Injects export button and handles export for ChatGPT chat
+
+/**
+ * ChatGPT Chat Exporter - ChatGPT content script
+ * Injects export button and handles export for ChatGPT chat.
+ *
+ * Features:
+ * - Export all messages in a ChatGPT chat conversation to Markdown.
+ * - Option to hide the export button via extension popup.
+ * - Uses conversation title for Markdown heading and filename (sanitized).
+ * - Robust scroll-to-load and clipboard copy logic.
+ */
 
 
+/**
+ * Injects the export button and manages its visibility based on user settings.
+ * @param {Object} options
+ * @param {string} options.id - Button element ID
+ * @param {string} options.buttonText - Button label
+ * @param {Object} options.position - CSS position {top, right}
+ * @param {Function} options.exportHandler - Export handler function
+ */
 function addExportButton({ id, buttonText, position, exportHandler }) {
   let observer;
   function ensureBtn(shouldShow) {
@@ -45,6 +62,9 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
       btn.style.display = '';
     }
   }
+  /**
+   * Checks chrome.storage for hideExportBtn and updates button visibility.
+   */
   function updateBtnFromStorage() {
     chrome.storage.sync.get(['hideExportBtn'], (result) => {
       ensureBtn(!result.hideExportBtn);
@@ -67,10 +87,22 @@ addExportButton({
   exportHandler: chatgptExportMain
 });
 
+/**
+ * Main export logic for ChatGPT chat.
+ * - Scrolls to load all messages.
+ * - Extracts user and model messages.
+ * - Uses conversation title for heading and filename (sanitized).
+ * - Downloads Markdown file.
+ */
 async function chatgptExportMain() {
+  /**
+   * Sleep helper for async delays.
+   * @param {number} ms
+   */
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
   // No citation remover needed for ChatGPT
   // Step 1: Scroll to load full chat history (robust for long chats)
+  // Find the chat history scroll container
   const scrollContainer = document.querySelector('div.flex.h-full.flex-col.overflow-y-auto');
   if (!scrollContainer) {
     alert('Could not find chat history container. Are you on a ChatGPT page?');
@@ -81,6 +113,7 @@ async function chatgptExportMain() {
   const maxScrollAttempts = 60;
   let scrollAttempts = 0;
   let lastScrollTop = null;
+  // Scroll to load all chat turns (handles long conversations)
   while (stableScrolls < maxStableScrolls && scrollAttempts < maxScrollAttempts) {
     const turns = document.querySelectorAll('article[data-testid^="conversation-turn-"]');
     const currentTurnCount = turns.length;
@@ -97,6 +130,7 @@ async function chatgptExportMain() {
     scrollAttempts++;
   }
   // Step 2: Gather all conversation turns and build Markdown
+  // Extract all conversation turns
   const turns = Array.from(document.querySelectorAll('article[data-testid^="conversation-turn-"]'));
   // Get conversation title from <title>
   let title = document.title ? document.title.trim() : '';
@@ -116,6 +150,7 @@ async function chatgptExportMain() {
     markdown += `# ChatGPT Chat Export\n\n`;
   }
   markdown += `> Exported on: ${new Date().toLocaleString()}\n\n---\n\n`;
+  // Build Markdown for each turn
   for (let i = 0; i < turns.length; i++) {
     const turn = turns[i];
     // User message

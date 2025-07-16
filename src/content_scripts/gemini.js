@@ -1,7 +1,24 @@
-// Gemini Chat Exporter - Gemini content script
-// Injects export button and handles export for Gemini chat
+
+/**
+ * Gemini Chat Exporter - Gemini content script
+ * Injects export button and handles export for Gemini chat.
+ *
+ * Features:
+ * - Export all messages in a Gemini chat conversation to Markdown.
+ * - Option to hide the export button via extension popup.
+ * - Robust scroll-to-load and clipboard copy logic.
+ * - Removes Gemini citation markers from exported content.
+ */
 
 
+/**
+ * Injects the export button and manages its visibility based on user settings.
+ * @param {Object} options
+ * @param {string} options.id - Button element ID
+ * @param {string} options.buttonText - Button label
+ * @param {Object} options.position - CSS position {top, right}
+ * @param {Function} options.exportHandler - Export handler function
+ */
 function addExportButton({ id, buttonText, position, exportHandler }) {
   let observer;
   function ensureBtn(shouldShow) {
@@ -45,6 +62,9 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
       btn.style.display = '';
     }
   }
+  /**
+   * Checks chrome.storage for hideExportBtn and updates button visibility.
+   */
   function updateBtnFromStorage() {
     chrome.storage.sync.get(['hideExportBtn'], (result) => {
       ensureBtn(!result.hideExportBtn);
@@ -67,8 +87,25 @@ addExportButton({
   exportHandler: geminiExportMain
 });
 
+/**
+ * Main export logic for Gemini chat.
+ * - Scrolls to load all messages.
+ * - Extracts user and model messages.
+ * - Removes citation markers.
+ * - Downloads Markdown file.
+ */
 async function geminiExportMain() {
+  /**
+   * Sleep helper for async delays.
+   * @param {number} ms
+   */
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  /**
+   * Removes Gemini citation markers from text.
+   * @param {string} text
+   * @returns {string}
+   */
   function removeCitations(text) {
     return text
       .replace(/\[cite_start\]/g, '')
@@ -76,6 +113,7 @@ async function geminiExportMain() {
       .replace(/\n{3,}/g, '\n\n')
       .trim();
   }
+  // Find the chat history scroll container
   const scrollContainer = document.querySelector('[data-test-id="chat-history-container"]');
   if (!scrollContainer) {
     alert('Could not find chat history container. Are you on a Gemini chat page?');
@@ -86,6 +124,7 @@ async function geminiExportMain() {
   const maxScrollAttempts = 60;
   let scrollAttempts = 0;
   let lastScrollTop = null;
+  // Scroll to load all chat turns (handles long conversations)
   while (stableScrolls < maxStableScrolls && scrollAttempts < maxScrollAttempts) {
     const turns = document.querySelectorAll('div.conversation-container');
     const currentTurnCount = turns.length;
@@ -101,8 +140,10 @@ async function geminiExportMain() {
     lastScrollTop = scrollTop;
     scrollAttempts++;
   }
+  // Extract all conversation turns
   const turns = Array.from(document.querySelectorAll('div.conversation-container'));
   let markdown = `# Gemini Chat Export\n\n> Exported on: ${new Date().toLocaleString()}\n\n---\n\n`;
+  // Build Markdown for each turn
   for (let i = 0; i < turns.length; i++) {
     const turn = turns[i];
     let userQuery = '';
@@ -135,12 +176,20 @@ async function geminiExportMain() {
     }
     markdown += '---\n\n';
   }
+  // Build output filename with current date/time
+  function getDateString() {
+    const d = new Date();
+    const pad = n => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  }
+  const filename = `gemini_chat_export_${getDateString()}.md`;
+
   // Download as Markdown file
   const blob = new Blob([markdown], { type: 'text/markdown' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'gemini_chat_export.md';
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   setTimeout(() => {

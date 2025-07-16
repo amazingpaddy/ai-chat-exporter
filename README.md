@@ -54,3 +54,7 @@ Contributions are welcome! Please open an issue or submit a pull request.
 ## License
 
 This project is licensed under the [Apache License 2.0](LICENSE).
+
+## Attribution
+
+Extension icons are generated using Gemini AI.
