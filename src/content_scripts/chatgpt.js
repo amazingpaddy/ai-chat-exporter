@@ -66,9 +66,15 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
    * Checks chrome.storage for hideExportBtn and updates button visibility.
    */
   function updateBtnFromStorage() {
-    chrome.storage.sync.get(['hideExportBtn'], (result) => {
-      ensureBtn(!result.hideExportBtn);
-    });
+    try {
+      if (chrome && chrome.storage && chrome.storage.sync) {
+        chrome.storage.sync.get(['hideExportBtn'], (result) => {
+          ensureBtn(!result.hideExportBtn);
+        });
+      }
+    } catch (e) {
+      // Silently ignore extension context errors
+    }
   }
   updateBtnFromStorage();
   observer = new MutationObserver(() => updateBtnFromStorage());
