@@ -165,11 +165,30 @@ async function geminiExportMain() {
       await sleep(500);
       const copyBtn = turn.querySelector('button[data-test-id="copy-button"]');
       if (copyBtn) {
-        copyBtn.click();
-        await sleep(500);
+        // Clear clipboard before copy
+        try { await navigator.clipboard.writeText(''); } catch (e) {}
+        // Clipboard automation is unreliable unless we mimic real user actions for every attempt.
+        // We repeat mouse hover and copy click in each poll to maximize the chance the site updates the clipboard.
+        let attempts = 0;
+        let clipboardText = '';
+        while (attempts < 10) {
+          // Mouse hover to ensure menu/options are visible and site is ready
+          modelRespElem.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+          await sleep(200);
+          // Click the copy button (may only work if UI is ready)
+          copyBtn.click();
+          await sleep(300);
+          // Try to read clipboard
+          clipboardText = await navigator.clipboard.readText();
+          if (clipboardText) break;
+          attempts++;
+        }
+        if (!clipboardText) {
+          alert('Failed to copy content from the chat. Export aborted.');
+          return;
+        }
         try {
-          modelResponse = await navigator.clipboard.readText();
-          modelResponse = removeCitations(modelResponse);
+          modelResponse = removeCitations(clipboardText);
           markdown += `## 🤖 Gemini\n\n${modelResponse}\n\n`;
         } catch (e) {
           markdown += '## 🤖 Gemini\n\n[Note: Could not read clipboard. Please check permissions.]\n\n';

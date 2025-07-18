@@ -10,9 +10,8 @@
     "storage"
   ],
   "host_permissions": [
-    "https://gemini.google.com/*",
-    "https://chatgpt.com/*",
-    "https://aistudio.google.com/*"
+  "https://gemini.google.com/*",
+  "https://chatgpt.com/*"
   ],
   "icons": {
     "16": "icons/icon16.png",
@@ -28,11 +27,6 @@
     {
       "matches": ["https://chatgpt.com/*"],
       "js": ["src/content_scripts/chatgpt.js"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": ["https://aistudio.google.com/*"],
-      "js": ["src/content_scripts/aistudio.js"],
       "run_at": "document_idle"
     }
   ],

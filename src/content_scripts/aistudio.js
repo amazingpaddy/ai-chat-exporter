@@ -1,4 +1,13 @@
 /**
+ * [SUPPORT DROPPED]
+ *
+ * AI Studio export support was removed from the extension because browser security and Google AI Studio's UI protections
+ * prevent reliable clipboard automation. Scripted clicks on the "Copy Markdown" button do not always update the clipboard
+ * due to user gesture requirements and anti-automation measures. This results in frequent failures or duplicate content.
+ *
+ * If browser or AI Studio behavior changes in the future, support may be reconsidered.
+ */
+/**
  * AI Studio Chat Exporter - AI Studio content script
  * Injects export button and handles export for AI Studio chat.
  *
