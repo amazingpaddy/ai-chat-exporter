@@ -123,23 +123,35 @@ async function aistudioExportMain() {
     let userQuery = '';
     const userPromptContainer = chatTurns[i]?.querySelector('.user-prompt-container[data-turn-role="User"]');
     if (userPromptContainer) {
-      userPromptContainer.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-      await sleep(500);
-      const moreBtn = chatTurns[i].querySelector('button[aria-label="Open options"]');
-      if (moreBtn) {
-        moreBtn.click();
+      // Clear clipboard before copy
+      try { await navigator.clipboard.writeText(''); } catch (e) {}
+      let attempts = 0;
+      let clipboardText = '';
+      while (attempts < 10) {
+        userPromptContainer.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
         await sleep(300);
-        const copyMarkdownBtn = Array.from(document.querySelectorAll('button.copy-markdown-button, button')).find(b => b.textContent.trim().toLowerCase().includes('copy markdown'));
-        if (copyMarkdownBtn) {
-          copyMarkdownBtn.click();
-          await sleep(500);
-          try {
-            userQuery = await navigator.clipboard.readText();
-            userQuery = removeCitations(userQuery);
-          } catch (e) {
-            userQuery = '';
+        const moreBtn = chatTurns[i].querySelector('button[aria-label="Open options"]');
+        if (moreBtn) {
+          moreBtn.click();
+          await sleep(200);
+          const copyMarkdownBtn = Array.from(document.querySelectorAll('button.copy-markdown-button, button')).find(b => b.textContent.trim().toLowerCase().includes('copy markdown'));
+          if (copyMarkdownBtn) {
+            copyMarkdownBtn.click();
+            await sleep(200);
+            clipboardText = await navigator.clipboard.readText();
+            if (clipboardText) break;
           }
         }
+        attempts++;
+      }
+      if (!clipboardText) {
+        alert('Failed to copy content from the chat. Export aborted.');
+        return;
+      }
+      try {
+        userQuery = removeCitations(clipboardText);
+      } catch (e) {
+        userQuery = '';
       }
     }
     if (userQuery) {
@@ -167,31 +179,37 @@ async function aistudioExportMain() {
     if (modelResponseTurn) {
       const modelPromptContainer = modelResponseTurn.querySelector('.model-prompt-container[data-turn-role="Model"]');
       if (modelPromptContainer) {
-        // Mouse hover to reveal options
-        modelPromptContainer.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-        await sleep(500);
-        // Click "More options" button
-        const moreBtn = modelResponseTurn.querySelector('button[aria-label="Open options"]');
-        if (moreBtn) {
-          moreBtn.click();
+        // Clear clipboard before copy
+        try { await navigator.clipboard.writeText(''); } catch (e) {}
+        let attempts = 0;
+        let clipboardText = '';
+        while (attempts < 10) {
+          modelPromptContainer.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
           await sleep(300);
-          // Click "Copy markdown" menu item
-          const copyMarkdownBtn = Array.from(document.querySelectorAll('button.copy-markdown-button, button')).find(b => b.textContent.trim().toLowerCase().includes('copy markdown'));
-          if (copyMarkdownBtn) {
-            copyMarkdownBtn.click();
-            await sleep(500);
-            try {
-              let modelResponse = await navigator.clipboard.readText();
-              modelResponse = removeCitations(modelResponse);
-              markdown += `## 🤖 AI Studio\n\n${modelResponse}\n\n`;
-            } catch (e) {
-              markdown += '## 🤖 AI Studio\n\n[Note: Could not read clipboard. Please check permissions.]\n\n';
+          const moreBtn = modelResponseTurn.querySelector('button[aria-label="Open options"]');
+          if (moreBtn) {
+            moreBtn.click();
+            await sleep(200);
+            const copyMarkdownBtn = Array.from(document.querySelectorAll('button.copy-markdown-button, button')).find(b => b.textContent.trim().toLowerCase().includes('copy markdown'));
+            if (copyMarkdownBtn) {
+              await sleep(1500);
+              copyMarkdownBtn.click();
+              clipboardText = await navigator.clipboard.readText();
+              await sleep(1500);
+              if (clipboardText) break;
             }
-          } else {
-            markdown += '## 🤖 AI Studio\n\n[Note: Copy markdown button not found. Please check the chat UI.]\n\n';
           }
-        } else {
-          markdown += '## 🤖 AI Studio\n\n[Note: More options button not found. Please check the chat UI.]\n\n';
+          attempts++;
+        }
+        if (!clipboardText) {
+          alert('Failed to copy content from the chat. Export aborted.');
+          return;
+        }
+        try {
+          clipboardText = removeCitations(clipboardText);
+          markdown += `## 🤖 AI Studio\n\n${clipboardText}\n\n`;
+        } catch (e) {
+          markdown += '## 🤖 AI Studio\n\n[Note: Could not read clipboard. Please check permissions.]\n\n';
         }
       } else {
         markdown += '## 🤖 AI Studio\n\n[Note: Model response container not found.]\n\n';
