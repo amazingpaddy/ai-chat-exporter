@@ -47,14 +47,45 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
       btn.style.transition = 'background 0.2s';
       btn.onmouseenter = () => btn.style.background = '#1765c1';
       btn.onmouseleave = () => btn.style.background = '#1a73e8';
+      // Create dropdown for turn number input
+      const dropdown = document.createElement('div');
+      dropdown.style.position = 'fixed';
+      dropdown.style.top = (parseInt(position.top) + 44) + 'px';
+      dropdown.style.right = position.right;
+      dropdown.style.zIndex = '9999';
+      dropdown.style.background = '#fff';
+      dropdown.style.border = '1px solid #ccc';
+      dropdown.style.borderRadius = '6px';
+      dropdown.style.padding = '10px';
+      dropdown.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
+      dropdown.style.display = 'none';
+      dropdown.innerHTML = `<label style="font-size:1em;font-weight:bold;">Start from turn:</label><input id="gemini-turn-input" type="number" min="1" value="1" style="width:60px;margin-left:8px;">`;
+      document.body.appendChild(dropdown);
       btn.addEventListener('click', async () => {
+        if (dropdown.style.display === 'none') {
+          dropdown.style.display = '';
+          return;
+        }
         btn.disabled = true;
         btn.textContent = 'Exporting...';
+        let startTurn = 1;
+        const input = document.getElementById('gemini-turn-input');
+        if (input && input.value) {
+          startTurn = Math.max(1, parseInt(input.value));
+        }
+        dropdown.style.display = 'none';
         try {
-          await exportHandler();
+          await exportHandler(startTurn);
         } finally {
           btn.disabled = false;
           btn.textContent = buttonText;
+        }
+      });
+      // Only show dropdown on button click, not hover
+      // Hide dropdown when clicking outside or after export
+      document.addEventListener('mousedown', (e) => {
+        if (dropdown.style.display !== 'none' && !dropdown.contains(e.target) && e.target !== btn) {
+          dropdown.style.display = 'none';
         }
       });
       document.body.appendChild(btn);
@@ -100,7 +131,7 @@ addExportButton({
  * - Removes citation markers.
  * - Downloads Markdown file.
  */
-async function geminiExportMain() {
+async function geminiExportMain(startTurn = 1) {
   /**
    * Sleep helper for async delays.
    * @param {number} ms
@@ -150,48 +181,77 @@ async function geminiExportMain() {
   const turns = Array.from(document.querySelectorAll('div.conversation-container'));
   let markdown = `# Gemini Chat Export\n\n> Exported on: ${new Date().toLocaleString()}\n\n---\n\n`;
   // Build Markdown for each turn
-  for (let i = 0; i < turns.length; i++) {
+  for (let i = startTurn - 1; i < turns.length; i++) {
     const turn = turns[i];
+    // Show popup log for each turn being copied
+    const popup = document.createElement('div');
+  popup.textContent = `Exporting message ${i + 1} of ${turns.length}...`;
+    popup.style.position = 'fixed';
+    popup.style.top = '24px';
+    popup.style.right = '24px';
+    popup.style.zIndex = '99999';
+    popup.style.background = '#333';
+    popup.style.color = '#fff';
+    popup.style.padding = '10px 18px';
+    popup.style.borderRadius = '8px';
+    popup.style.fontSize = '1em';
+    popup.style.boxShadow = '0 2px 12px rgba(0,0,0,0.12)';
+    popup.style.opacity = '0.95';
+    popup.style.pointerEvents = 'none';
+    document.body.appendChild(popup);
+    setTimeout(() => { popup.remove(); }, 900);
+  markdown += `### Message ${i + 1}\n\n`;
     let userQuery = '';
     const userQueryElem = turn.querySelector('user-query');
+    let userQuerySuccess = false;
     if (userQueryElem) {
-      userQuery = userQueryElem.textContent.trim();
-      markdown += `## 👤 You\n\n${userQuery}\n\n`;
+      let attempts = 0;
+      while (attempts < 3) {
+        userQuery = userQueryElem.textContent.trim();
+        if (userQuery) {
+          markdown += `## 👤 You\n\n${userQuery}\n\n`;
+          userQuerySuccess = true;
+          break;
+        }
+        attempts++;
+        await sleep(100);
+      }
+      if (!userQuerySuccess) {
+        markdown += '## 👤 You\n\n[Note: Could not copy user query. Please manually copy and paste this query from turn ' + (i + 1) + '.]\n\n';
+      }
+    } else {
+      markdown += '## 👤 You\n\n[Note: User query not found.]\n\n';
     }
     let modelResponse = '';
     const modelRespElem = turn.querySelector('model-response');
+    let modelResponseSuccess = false;
     if (modelRespElem) {
       modelRespElem.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
       await sleep(500);
       const copyBtn = turn.querySelector('button[data-test-id="copy-button"]');
       if (copyBtn) {
-        // Clear clipboard before copy
         try { await navigator.clipboard.writeText(''); } catch (e) {}
-        // Clipboard automation is unreliable unless we mimic real user actions for every attempt.
-        // We repeat mouse hover and copy click in each poll to maximize the chance the site updates the clipboard.
         let attempts = 0;
         let clipboardText = '';
         while (attempts < 10) {
-          // Mouse hover to ensure menu/options are visible and site is ready
           modelRespElem.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
           await sleep(200);
-          // Click the copy button (may only work if UI is ready)
           copyBtn.click();
           await sleep(300);
-          // Try to read clipboard
           clipboardText = await navigator.clipboard.readText();
           if (clipboardText) break;
           attempts++;
         }
         if (!clipboardText) {
-          alert('Failed to copy content from the chat. Export aborted.');
-          return;
-        }
-        try {
-          modelResponse = removeCitations(clipboardText);
-          markdown += `## 🤖 Gemini\n\n${modelResponse}\n\n`;
-        } catch (e) {
-          markdown += '## 🤖 Gemini\n\n[Note: Could not read clipboard. Please check permissions.]\n\n';
+          markdown += '## 🤖 Gemini\n\n[Note: Could not copy model response. Please manually copy and paste this response from turn ' + (i + 1) + '.]\n\n';
+        } else {
+          try {
+            modelResponse = removeCitations(clipboardText);
+            markdown += `## 🤖 Gemini\n\n${modelResponse}\n\n`;
+            modelResponseSuccess = true;
+          } catch (e) {
+            markdown += '## 🤖 Gemini\n\n[Note: Could not read clipboard. Please check permissions.]\n\n';
+          }
         }
       } else {
         markdown += '## 🤖 Gemini\n\n[Note: Copy button not found. Please check the chat UI.]\n\n';

@@ -47,14 +47,45 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
       btn.style.transition = 'background 0.2s';
       btn.onmouseenter = () => btn.style.background = '#1765c1';
       btn.onmouseleave = () => btn.style.background = '#1a73e8';
+      // Create dropdown for message number input
+      const dropdown = document.createElement('div');
+      dropdown.style.position = 'fixed';
+      dropdown.style.top = (parseInt(position.top) + 44) + 'px';
+      dropdown.style.right = position.right;
+      dropdown.style.zIndex = '9999';
+      dropdown.style.background = '#fff';
+      dropdown.style.border = '1px solid #ccc';
+      dropdown.style.borderRadius = '6px';
+      dropdown.style.padding = '10px';
+      dropdown.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
+      dropdown.style.display = 'none';
+      dropdown.innerHTML = `<label style="font-size:1em;font-weight:bold;">Start from message:</label><input id="chatgpt-msg-input" type="number" min="1" value="1" style="width:60px;margin-left:8px;">`;
+      document.body.appendChild(dropdown);
       btn.addEventListener('click', async () => {
+        if (dropdown.style.display === 'none') {
+          dropdown.style.display = '';
+          return;
+        }
         btn.disabled = true;
         btn.textContent = 'Exporting...';
+        let startMsg = 1;
+        const input = document.getElementById('chatgpt-msg-input');
+        if (input && input.value) {
+          startMsg = Math.max(1, parseInt(input.value));
+        }
+        dropdown.style.display = 'none';
         try {
-          await exportHandler();
+          await exportHandler(startMsg);
         } finally {
           btn.disabled = false;
           btn.textContent = buttonText;
+        }
+      });
+      // Only show dropdown on button click, not hover
+      // Hide dropdown when clicking outside or after export
+      document.addEventListener('mousedown', (e) => {
+        if (dropdown.style.display !== 'none' && !dropdown.contains(e.target) && e.target !== btn) {
+          dropdown.style.display = 'none';
         }
       });
       document.body.appendChild(btn);
@@ -100,7 +131,7 @@ addExportButton({
  * - Uses conversation title for heading and filename (sanitized).
  * - Downloads Markdown file.
  */
-async function chatgptExportMain() {
+async function chatgptExportMain(startMsg = 1) {
   /**
    * Sleep helper for async delays.
    * @param {number} ms
@@ -165,56 +196,84 @@ async function chatgptExportMain() {
   }
   markdown += `> Exported on: ${new Date().toLocaleString()}\n\n---\n\n`;
   // Build Markdown for each turn
-  for (let i = 0; i < turns.length; i++) {
+  for (let i = startMsg - 1; i < turns.length; i++) {
     const turn = turns[i];
+    // Show a disappearing popup log for which turn is being exported
+    const logDiv = document.createElement('div');
+    logDiv.textContent = `Exporting message ${i + 1} of ${turns.length}...`;
+    logDiv.style.position = 'fixed';
+    logDiv.style.top = '20px';
+    logDiv.style.right = '20px';
+    logDiv.style.background = '#333';
+    logDiv.style.color = '#fff';
+    logDiv.style.padding = '8px 16px';
+    logDiv.style.borderRadius = '6px';
+    logDiv.style.zIndex = '99999';
+    logDiv.style.fontSize = '1em';
+    logDiv.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+    document.body.appendChild(logDiv);
+    setTimeout(() => { document.body.removeChild(logDiv); }, 1200);
+
+    markdown += `### Message ${i + 1}\n\n`;
     // User message
     let userQuery = '';
     const userHeading = turn.querySelector('h5.sr-only');
+    let userQuerySuccess = false;
     if (userHeading && userHeading.textContent.trim().toLowerCase().includes('you said')) {
       const userDiv = userHeading.nextElementSibling;
       if (userDiv) {
         userQuery = userDiv.textContent.trim();
-        markdown += `## 👤 You\n\n${userQuery}\n\n`;
+        if (userQuery) {
+          markdown += `## 👤 You\n\n${userQuery}\n\n`;
+          userQuerySuccess = true;
+        } else {
+          markdown += '## 👤 You\n\n[Note: Could not copy user query. Please manually copy and paste this query from message ' + (i + 1) + '.]\n\n';
+        }
+      } else {
+        markdown += '## 👤 You\n\n[Note: User query not found.]\n\n';
       }
+    } else {
+      markdown += '## 👤 You\n\n[Note: User query not found.]\n\n';
     }
     // Assistant (model) message
     let modelResponse = '';
     const modelHeading = turn.querySelector('h6.sr-only');
+    let modelResponseSuccess = false;
     if (modelHeading && modelHeading.textContent.trim().toLowerCase().includes('chatgpt said')) {
       const modelDiv = modelHeading.nextElementSibling;
       if (modelDiv) {
         // Find and click the copy button for this turn
         const copyBtn = turn.querySelector('button[data-testid="copy-turn-action-button"]');
         if (copyBtn) {
-          // Clear clipboard before copy
           try { await navigator.clipboard.writeText(''); } catch (e) {}
-          // Clipboard automation is unreliable unless we mimic real user actions for every attempt.
-          // We repeat the copy click in each poll to maximize the chance the site updates the clipboard.
           let attempts = 0;
           let clipboardText = '';
           while (attempts < 10) {
-            // Click the copy button (may only work if UI is ready)
             copyBtn.click();
             await sleep(300);
-            // Try to read clipboard
             clipboardText = await navigator.clipboard.readText();
             if (clipboardText) break;
             attempts++;
           }
           if (!clipboardText) {
-            alert('Failed to copy content from the chat. Export aborted.');
-            return;
-          }
-          try {
-            modelResponse = clipboardText;
-            markdown += `## 🤖 ChatGPT\n\n${modelResponse}\n\n`;
-          } catch (e) {
-            markdown += '## 🤖 ChatGPT\n\n[Note: Could not read clipboard. Please check permissions.]\n\n';
+            markdown += '## 🤖 ChatGPT\n\n[Note: Could not copy model response. Please manually copy and paste this response from message ' + (i + 1) + '.]\n\n';
+          } else {
+            try {
+              modelResponse = clipboardText;
+              markdown += `## 🤖 ChatGPT\n\n${modelResponse}\n\n`;
+              modelResponseSuccess = true;
+            } catch (e) {
+              markdown += '## 🤖 ChatGPT\n\n[Note: Could not read clipboard. Please check permissions.]\n\n';
+            }
           }
         } else {
           markdown += '## 🤖 ChatGPT\n\n[Note: Copy button not found. Please check the chat UI.]\n\n';
         }
+      } else {
+        markdown += '## 🤖 ChatGPT\n\n[Note: Model response not found.]\n\n';
       }
+    } else {
+      markdown += '## 🤖 ChatGPT\n\n[Note: Model response not found.]\n\n';
     }
     markdown += '---\n\n';
   }
