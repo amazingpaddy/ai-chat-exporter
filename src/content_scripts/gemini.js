@@ -53,13 +53,19 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
       dropdown.style.top = (parseInt(position.top) + 44) + 'px';
       dropdown.style.right = position.right;
       dropdown.style.zIndex = '9999';
-      dropdown.style.background = '#fff';
       dropdown.style.border = '1px solid #ccc';
       dropdown.style.borderRadius = '6px';
       dropdown.style.padding = '10px';
       dropdown.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
       dropdown.style.display = 'none';
-      dropdown.innerHTML = `<label style="font-size:1em;font-weight:bold;">Start from turn:</label><input id="gemini-turn-input" type="number" min="1" value="1" style="width:60px;margin-left:8px;">`;
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        dropdown.style.background = '#222';
+        dropdown.style.color = '#fff';
+      } else {
+        dropdown.style.background = '#fff';
+        dropdown.style.color = '#222';
+      }
+  dropdown.innerHTML = `<label style="font-size:1em;font-weight:bold;" title="A message is a pair of your question and Gemini's response. Export will start from the selected message number.">Export from message number:</label><input id="gemini-turn-input" type="number" min="1" value="1" style="width:60px;margin-left:8px;" title="Enter the message number you want to start exporting from. Each message is a question and its response.">`;
       document.body.appendChild(dropdown);
       btn.addEventListener('click', async () => {
         if (dropdown.style.display === 'none') {
