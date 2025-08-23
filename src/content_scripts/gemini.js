@@ -218,7 +218,7 @@ async function geminiExportMain(startTurn = 1) {
     const modelRespElem = turn.querySelector('model-response');
     let modelResponse = '[Note: Could not extract response.]';
     if (modelRespElem) {
-      const responseContent = modelRespElem.querySelector('.response-content-container');
+      const responseContent = modelRespElem.querySelector('.markdown');
       if (responseContent) {
         modelResponse = removeCitations(responseContent.textContent);
       }
