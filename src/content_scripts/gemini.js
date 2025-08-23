@@ -213,14 +213,14 @@ async function geminiExportMain(startTurn = 1) {
     setTimeout(() => { popup.remove(); }, 900);
 
     const userQueryElem = turn.querySelector('user-query');
-    const userQuery = userQueryElem ? userQueryElem.textContent.trim() : '[Note: Could not extract prompt.]';
+    const userQuery = userQueryElem ? userQueryElem.innerText.trim() : '[Note: Could not extract prompt.]';
 
     const modelRespElem = turn.querySelector('model-response');
     let modelResponse = '[Note: Could not extract response.]';
     if (modelRespElem) {
       const responseContent = modelRespElem.querySelector('.markdown');
       if (responseContent) {
-        modelResponse = removeCitations(responseContent.textContent);
+        modelResponse = removeCitations(responseContent.innerText);
       }
     }
 
