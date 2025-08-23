@@ -133,8 +133,9 @@ addExportButton({
 /**
  * Main export logic for Gemini chat.
  * - Scrolls to load all messages.
- * - Extracts user and model messages.
- * - Removes citation markers.
+ * - Extracts user and model messages directly from the DOM.
+ * - Stores conversation in an in-memory array.
+ * - Formats the output with "Prompt" and "Response" headings.
  * - Downloads Markdown file.
  */
 async function geminiExportMain(startTurn = 1) {
@@ -156,17 +157,20 @@ async function geminiExportMain(startTurn = 1) {
       .replace(/\n{3,}/g, '\n\n')
       .trim();
   }
+
   // Find the chat history scroll container
   const scrollContainer = document.querySelector('[data-test-id="chat-history-container"]');
   if (!scrollContainer) {
     alert('Could not find chat history container. Are you on a Gemini chat page?');
     return;
   }
+
   let stableScrolls = 0;
   const maxStableScrolls = 4;
   const maxScrollAttempts = 60;
   let scrollAttempts = 0;
   let lastScrollTop = null;
+
   // Scroll to load all chat turns (handles long conversations)
   while (stableScrolls < maxStableScrolls && scrollAttempts < maxScrollAttempts) {
     const turns = document.querySelectorAll('div.conversation-container');
@@ -183,15 +187,16 @@ async function geminiExportMain(startTurn = 1) {
     lastScrollTop = scrollTop;
     scrollAttempts++;
   }
+
   // Extract all conversation turns
   const turns = Array.from(document.querySelectorAll('div.conversation-container'));
-  let markdown = `# Gemini Chat Export\n\n> Exported on: ${new Date().toLocaleString()}\n\n---\n\n`;
-  // Build Markdown for each turn
+  let conversationData = [];
+
+  // Build conversation data for each turn
   for (let i = startTurn - 1; i < turns.length; i++) {
     const turn = turns[i];
-    // Show popup log for each turn being copied
     const popup = document.createElement('div');
-  popup.textContent = `Exporting message ${i + 1} of ${turns.length}...`;
+    popup.textContent = `Exporting message ${i + 1} of ${turns.length}...`;
     popup.style.position = 'fixed';
     popup.style.top = '24px';
     popup.style.right = '24px';
@@ -206,72 +211,33 @@ async function geminiExportMain(startTurn = 1) {
     popup.style.pointerEvents = 'none';
     document.body.appendChild(popup);
     setTimeout(() => { popup.remove(); }, 900);
-  markdown += `### Message ${i + 1}\n\n`;
-    let userQuery = '';
+
     const userQueryElem = turn.querySelector('user-query');
-    let userQuerySuccess = false;
-    if (userQueryElem) {
-      let attempts = 0;
-      while (attempts < 3) {
-        userQuery = userQueryElem.textContent.trim();
-        if (userQuery) {
-          markdown += `## 👤 You\n\n${userQuery}\n\n`;
-          userQuerySuccess = true;
-          break;
-        }
-        attempts++;
-        await sleep(100);
-      }
-      if (!userQuerySuccess) {
-        markdown += '## 👤 You\n\n[Note: Could not copy user query. Please manually copy and paste this query from turn ' + (i + 1) + '.]\n\n';
-      }
-    } else {
-      markdown += '## 👤 You\n\n[Note: User query not found.]\n\n';
-    }
-    let modelResponse = '';
+    const userQuery = userQueryElem ? userQueryElem.textContent.trim() : '[Note: Could not extract prompt.]';
+
     const modelRespElem = turn.querySelector('model-response');
-    let modelResponseSuccess = false;
+    let modelResponse = '[Note: Could not extract response.]';
     if (modelRespElem) {
-      modelRespElem.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-      await sleep(500);
-      const copyBtn = turn.querySelector('button[data-test-id="copy-button"]');
-      if (copyBtn) {
-        try { await navigator.clipboard.writeText(''); } catch (e) {}
-        let attempts = 0;
-        let clipboardText = '';
-        while (attempts < 10) {
-          modelRespElem.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-          await sleep(200);
-          copyBtn.click();
-          await sleep(300);
-          clipboardText = await navigator.clipboard.readText();
-          if (clipboardText) break;
-          attempts++;
-        }
-        if (!clipboardText) {
-          markdown += '## 🤖 Gemini\n\n[Note: Could not copy model response. Please manually copy and paste this response from turn ' + (i + 1) + '.]\n\n';
-        } else {
-          try {
-            modelResponse = removeCitations(clipboardText);
-            markdown += `## 🤖 Gemini\n\n${modelResponse}\n\n`;
-            modelResponseSuccess = true;
-          } catch (e) {
-            markdown += '## 🤖 Gemini\n\n[Note: Could not read clipboard. Please check permissions.]\n\n';
-          }
-        }
-      } else {
-        markdown += '## 🤖 Gemini\n\n[Note: Copy button not found. Please check the chat UI.]\n\n';
+      const responseContent = modelRespElem.querySelector('.response-content-container');
+      if (responseContent) {
+        modelResponse = removeCitations(responseContent.textContent);
       }
-    } else {
-      markdown += '## 🤖 Gemini\n\n[Note: Model response not found.]\n\n';
     }
-    markdown += '---\n\n';
+
+    conversationData.push({ prompt: userQuery, response: modelResponse });
   }
+
+  // Build the final Markdown string
+  let markdown = `# Gemini Chat Export\n\n> Exported on: ${new Date().toLocaleString()}\n\n---\n\n`;
+  conversationData.forEach(turn => {
+    markdown += `## Prompt:\n\n${turn.prompt}\n\n## Response:\n\n${turn.response}\n\n---\n\n`;
+  });
+
   // Build output filename with current date/time in YYYY-MM-DD_HHMMSS format
   function getDateString() {
     const d = new Date();
     const pad = n => n.toString().padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   }
   const filename = `gemini_chat_export_${getDateString()}.md`;
 
