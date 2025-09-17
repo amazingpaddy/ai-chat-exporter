@@ -18,8 +18,9 @@
  * @param {string} options.buttonText - Button label
  * @param {Object} options.position - CSS position {top, right}
  * @param {Function} options.exportHandler - Export handler function
+ * @param {Function} [options.visibleWhen] - Optional predicate to determine visibility (must return boolean)
  */
-function addExportButton({ id, buttonText, position, exportHandler }) {
+function addExportButton({ id, buttonText, position, exportHandler, visibleWhen }) {
   let observer;
   function ensureBtn(shouldShow) {
     let btn = document.getElementById(id);
@@ -65,7 +66,8 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
         dropdown.style.background = '#fff';
         dropdown.style.color = '#222';
       }
-  dropdown.innerHTML = `<label style="font-size:1em;font-weight:bold;" title="A message is a pair of your question and Gemini's response. Export will start from the selected message number.">Export from message number:</label><input id="gemini-turn-input" type="number" min="1" value="1" style="width:60px;margin-left:8px;" title="Enter the message number you want to start exporting from. Each message is a question and its response.">`;
+      const inputId = `${id}-turn-input`;
+  dropdown.innerHTML = `<label style="font-size:1em;font-weight:bold;" title="A message is a pair of your question and Gemini's response. Export will start from the selected message number.">Export from message number:</label><input id="${inputId}" type="number" min="1" value="1" style="width:60px;margin-left:8px;" title="Enter the message number you want to start exporting from. Each message is a question and its response.">`;
       document.body.appendChild(dropdown);
       btn.addEventListener('click', async () => {
         if (dropdown.style.display === 'none') {
@@ -75,7 +77,7 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
         btn.disabled = true;
         btn.textContent = 'Exporting...';
         let startTurn = 1;
-        const input = document.getElementById('gemini-turn-input');
+        const input = document.getElementById(inputId);
         if (input && input.value) {
           startTurn = Math.max(1, parseInt(input.value));
         }
@@ -106,7 +108,11 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
     try {
       if (chrome && chrome.storage && chrome.storage.sync) {
         chrome.storage.sync.get(['hideExportBtn'], (result) => {
-          ensureBtn(!result.hideExportBtn);
+          let show = !result.hideExportBtn;
+          if (typeof visibleWhen === 'function') {
+            try { show = show && !!visibleWhen(); } catch (e) { show = false; }
+          }
+          ensureBtn(show);
         });
       }
     } catch (e) {
@@ -130,6 +136,170 @@ addExportButton({
   exportHandler: geminiExportMain
 });
 
+// Add Deep Research export button (visible only when the Deep Research panel exists)
+addExportButton({
+  id: 'gemini-export-deep-research-btn',
+  buttonText: 'Export Deep Research Report',
+  position: { top: '124px', right: '20px' }, // 44px below the Export Chat button
+  exportHandler: geminiDeepResearchExportMain,
+  visibleWhen: () => !!document.querySelector('deep-research-immersive-panel')
+});
+
+/**
+ * Shared helpers (reused by both export flows)
+ */
+/** Sleep helper for async delays. */
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/** Removes Gemini citation markers and extra newlines from text. */
+function removeCitations(text) {
+  return String(text)
+    .replace(/\[cite_start\]/g, '')
+    .replace(/\[cite:[\d,\s]+\]/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** Returns current date/time in YYYY-MM-DD_HHMMSS format. */
+function getDateString() {
+  const d = new Date();
+  const pad = n => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
+/** Lightweight toast for progress notifications. */
+function createToast(text, ttlMs = 900) {
+  const popup = document.createElement('div');
+  popup.textContent = text;
+  popup.style.position = 'fixed';
+  popup.style.top = '24px';
+  popup.style.right = '24px';
+  popup.style.zIndex = '99999';
+  popup.style.background = '#333';
+  popup.style.color = '#fff';
+  popup.style.padding = '10px 18px';
+  popup.style.borderRadius = '8px';
+  popup.style.fontSize = '1em';
+  popup.style.boxShadow = '0 2px 12px rgba(0,0,0,0.12)';
+  popup.style.opacity = '0.95';
+  popup.style.pointerEvents = 'none';
+  document.body.appendChild(popup);
+  setTimeout(() => { popup.remove(); }, ttlMs);
+  return popup;
+}
+
+/** Finds conversation turn containers under the given root. */
+function findTurns(root) {
+  if (!root) return [];
+  // Standard chat turn containers
+  let turns = Array.from(root.querySelectorAll('div.conversation-container'));
+  if (turns.length > 0) return turns;
+  // Deep Research: operate locally within the panel. If no known containers found,
+  // treat the panel itself as a single turn to ensure we can still export content.
+  const isDeepResearchRoot = (root instanceof Element && root.matches('deep-research-immersive-panel'))
+    || (root.querySelector && !!root.querySelector('deep-research-immersive-panel'));
+  if (isDeepResearchRoot) {
+    // Try any alternative selector variants first (future-proofing)
+    turns = Array.from(root.querySelectorAll('[data-test-id="conversation-container"], [data-turn], .dr-turn'));
+    if (turns.length > 0) return turns;
+    return [root];
+  }
+  return turns;
+}
+
+/** Extracts the user query for a given turn with small retries. */
+async function extractUserQuery(turn) {
+  const userQueryElem = turn ? turn.querySelector('user-query') : null;
+  if (!userQueryElem) return { ok: false, reason: 'missing', text: '' };
+  let attempts = 0;
+  while (attempts < 3) {
+    const txt = (userQueryElem.textContent || '').trim();
+    if (txt) return { ok: true, text: txt };
+    attempts++;
+    await sleep(100);
+  }
+  return { ok: false, reason: 'empty', text: '' };
+}
+
+/** Copies the model response via the Gemini copy button with retries. */
+async function copyModelResponse(turn) {
+  const modelRespElem = turn ? turn.querySelector('model-response') : null;
+  if (!modelRespElem) {
+    const fallbackText = (turn && turn.textContent ? turn.textContent.trim() : '');
+    if (fallbackText) return { ok: true, text: removeCitations(fallbackText), note: 'fallback-text' };
+    return { ok: false, reason: 'missing-model', text: '' };
+  }
+  modelRespElem.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+  await sleep(500);
+  const copyBtn = turn.querySelector('button[data-test-id="copy-button"]');
+  if (!copyBtn) {
+    const fallbackText = (modelRespElem.textContent || '').trim() || (turn && turn.textContent || '').trim();
+    if (fallbackText) return { ok: true, text: removeCitations(fallbackText), note: 'fallback-text' };
+    return { ok: false, reason: 'missing-copy-button', text: '' };
+  }
+  try { await navigator.clipboard.writeText(''); } catch (e) {}
+  let attempts = 0;
+  while (attempts < 10) {
+    modelRespElem.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    await sleep(200);
+    copyBtn.click();
+    await sleep(300);
+    try {
+      const clipboardText = await navigator.clipboard.readText();
+      if (clipboardText) return { ok: true, text: removeCitations(clipboardText) };
+    } catch (e) {
+      const fallbackText = (modelRespElem.textContent || '').trim() || (turn && turn.textContent || '').trim();
+      if (fallbackText) return { ok: true, text: removeCitations(fallbackText), note: 'fallback-text' };
+      return { ok: false, reason: 'clipboard-permissions', text: '' };
+    }
+    attempts++;
+  }
+  const fallbackText = (modelRespElem.textContent || '').trim() || (turn && turn.textContent || '').trim();
+  if (fallbackText) return { ok: true, text: removeCitations(fallbackText), note: 'fallback-text' };
+  return { ok: false, reason: 'empty-clipboard', text: '' };
+}
+
+/**
+ * Builds Markdown for a set of turns (shared by chat and deep research exports).
+ * Title is a plain string (e.g., "Gemini Chat Export"), and will be prefixed with '# '.
+ */
+async function buildMarkdown(title, turns, startTurn = 1) {
+  let md = `# ${title}\n\n> Exported on: ${new Date().toLocaleString()}\n\n---\n\n`;
+  const total = turns.length;
+  for (let i = Math.max(0, startTurn - 1); i < total; i++) {
+    const turn = turns[i];
+    createToast(`Exporting message ${i + 1} of ${total}...`, 900);
+    md += `### Message ${i + 1}\n\n`;
+    // User
+    const uq = await extractUserQuery(turn);
+    if (uq.ok) {
+      md += `## 👤 You\n\n${uq.text}\n\n`;
+    } else if (uq.reason === 'missing') {
+      md += '## 👤 You\n\n[Note: User query not found.]\n\n';
+    } else {
+      md += `## 👤 You\n\n[Note: Could not copy user query. Please manually copy and paste this query from turn ${i + 1}.]\n\n`;
+    }
+    // Model
+    const mr = await copyModelResponse(turn);
+    if (mr.ok) {
+      if (mr.note === 'fallback-text') {
+        md += '## 🤖 Gemini\n\n[Note: Used text content fallback due to missing copy button or permissions.]\n\n';
+      }
+      md += `## 🤖 Gemini\n\n${mr.text}\n\n`;
+    } else if (mr.reason === 'missing-model') {
+      md += '## 🤖 Gemini\n\n[Note: Model response not found.]\n\n';
+    } else if (mr.reason === 'missing-copy-button') {
+      md += '## 🤖 Gemini\n\n[Note: Copy button not found. Please check the chat UI.]\n\n';
+    } else if (mr.reason === 'clipboard-permissions') {
+      md += '## 🤖 Gemini\n\n[Note: Could not read clipboard. Please check permissions.]\n\n';
+    } else {
+      md += `## 🤖 Gemini\n\n[Note: Could not copy model response. Please manually copy and paste this response from turn ${i + 1}.]\n\n`;
+    }
+    md += `---\n\n`;
+  }
+  return md;
+}
+
 /**
  * Main export logic for Gemini chat.
  * - Scrolls to load all messages.
@@ -138,24 +308,6 @@ addExportButton({
  * - Downloads Markdown file.
  */
 async function geminiExportMain(startTurn = 1) {
-  /**
-   * Sleep helper for async delays.
-   * @param {number} ms
-   */
-  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-  /**
-   * Removes Gemini citation markers from text.
-   * @param {string} text
-   * @returns {string}
-   */
-  function removeCitations(text) {
-    return text
-      .replace(/\[cite_start\]/g, '')
-      .replace(/\[cite:[\d,\s]+\]/g, '')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
-  }
   // Find the chat history scroll container
   const scrollContainer = document.querySelector('[data-test-id="chat-history-container"]');
   if (!scrollContainer) {
@@ -183,96 +335,9 @@ async function geminiExportMain(startTurn = 1) {
     lastScrollTop = scrollTop;
     scrollAttempts++;
   }
-  // Extract all conversation turns
-  const turns = Array.from(document.querySelectorAll('div.conversation-container'));
-  let markdown = `# Gemini Chat Export\n\n> Exported on: ${new Date().toLocaleString()}\n\n---\n\n`;
-  // Build Markdown for each turn
-  for (let i = startTurn - 1; i < turns.length; i++) {
-    const turn = turns[i];
-    // Show popup log for each turn being copied
-    const popup = document.createElement('div');
-  popup.textContent = `Exporting message ${i + 1} of ${turns.length}...`;
-    popup.style.position = 'fixed';
-    popup.style.top = '24px';
-    popup.style.right = '24px';
-    popup.style.zIndex = '99999';
-    popup.style.background = '#333';
-    popup.style.color = '#fff';
-    popup.style.padding = '10px 18px';
-    popup.style.borderRadius = '8px';
-    popup.style.fontSize = '1em';
-    popup.style.boxShadow = '0 2px 12px rgba(0,0,0,0.12)';
-    popup.style.opacity = '0.95';
-    popup.style.pointerEvents = 'none';
-    document.body.appendChild(popup);
-    setTimeout(() => { popup.remove(); }, 900);
-  markdown += `### Message ${i + 1}\n\n`;
-    let userQuery = '';
-    const userQueryElem = turn.querySelector('user-query');
-    let userQuerySuccess = false;
-    if (userQueryElem) {
-      let attempts = 0;
-      while (attempts < 3) {
-        userQuery = userQueryElem.textContent.trim();
-        if (userQuery) {
-          markdown += `## 👤 You\n\n${userQuery}\n\n`;
-          userQuerySuccess = true;
-          break;
-        }
-        attempts++;
-        await sleep(100);
-      }
-      if (!userQuerySuccess) {
-        markdown += '## 👤 You\n\n[Note: Could not copy user query. Please manually copy and paste this query from turn ' + (i + 1) + '.]\n\n';
-      }
-    } else {
-      markdown += '## 👤 You\n\n[Note: User query not found.]\n\n';
-    }
-    let modelResponse = '';
-    const modelRespElem = turn.querySelector('model-response');
-    let modelResponseSuccess = false;
-    if (modelRespElem) {
-      modelRespElem.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-      await sleep(500);
-      const copyBtn = turn.querySelector('button[data-test-id="copy-button"]');
-      if (copyBtn) {
-        try { await navigator.clipboard.writeText(''); } catch (e) {}
-        let attempts = 0;
-        let clipboardText = '';
-        while (attempts < 10) {
-          modelRespElem.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-          await sleep(200);
-          copyBtn.click();
-          await sleep(300);
-          clipboardText = await navigator.clipboard.readText();
-          if (clipboardText) break;
-          attempts++;
-        }
-        if (!clipboardText) {
-          markdown += '## 🤖 Gemini\n\n[Note: Could not copy model response. Please manually copy and paste this response from turn ' + (i + 1) + '.]\n\n';
-        } else {
-          try {
-            modelResponse = removeCitations(clipboardText);
-            markdown += `## 🤖 Gemini\n\n${modelResponse}\n\n`;
-            modelResponseSuccess = true;
-          } catch (e) {
-            markdown += '## 🤖 Gemini\n\n[Note: Could not read clipboard. Please check permissions.]\n\n';
-          }
-        }
-      } else {
-        markdown += '## 🤖 Gemini\n\n[Note: Copy button not found. Please check the chat UI.]\n\n';
-      }
-    } else {
-      markdown += '## 🤖 Gemini\n\n[Note: Model response not found.]\n\n';
-    }
-    markdown += '---\n\n';
-  }
-  // Build output filename with current date/time in YYYY-MM-DD_HHMMSS format
-  function getDateString() {
-    const d = new Date();
-    const pad = n => n.toString().padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-  }
+  // Extract all conversation turns and build markdown
+  const turns = findTurns(document);
+  const markdown = await buildMarkdown('Gemini Chat Export', turns, startTurn);
   const filename = `gemini_chat_export_${getDateString()}.md`;
 
   // Download as Markdown file
@@ -288,3 +353,34 @@ async function geminiExportMain(startTurn = 1) {
     URL.revokeObjectURL(url);
   }, 1000);
 }
+
+/**
+ * Deep Research export logic scoped to <deep-research-immersive-panel>.
+ * Builds markdown using shared helpers and downloads a Deep Research-specific file.
+ */
+async function geminiDeepResearchExportMain(startTurn = 1) {
+  const panel = document.querySelector('deep-research-immersive-panel');
+  if (!panel) {
+    alert('Deep Research panel not found. Are you on a Deep Research session?');
+    return;
+  }
+  const turns = findTurns(panel);
+  if (!turns.length) {
+    alert('No Deep Research content found in the panel.');
+    return;
+  }
+  const markdown = await buildMarkdown('Gemini Deep Research Report', turns, startTurn);
+  const filename = `gemini_deep_research_${getDateString()}.md`;
+  const blob = new Blob([markdown], { type: 'text/markdown' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
+}
+ 
