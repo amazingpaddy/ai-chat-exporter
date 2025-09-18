@@ -364,12 +364,22 @@ async function geminiDeepResearchExportMain(startTurn = 1) {
     alert('Deep Research panel not found. Are you on a Deep Research session?');
     return;
   }
-  const turns = findTurns(panel);
-  if (!turns.length) {
-    alert('No Deep Research content found in the panel.');
-    return;
+  // Prefer HTML→Markdown conversion for the Deep Research report content.
+  // If conversion yields no content, fallback to turn-based export for resilience.
+  let body = deepResearchPanelToMarkdown(panel).trim();
+  if (!body) {
+    const turns = findTurns(panel);
+    if (!turns.length) {
+      alert('No Deep Research content found in the panel.');
+      return;
+    }
+    body = await buildMarkdown('Gemini Deep Research Report', turns, startTurn);
+  } else {
+    // Wrap with standard header to mirror other exports
+    const header = `# Gemini Deep Research Report\n\n> Exported on: ${new Date().toLocaleString()}\n\n---\n\n`;
+    body = header + body + '\n';
   }
-  const markdown = await buildMarkdown('Gemini Deep Research Report', turns, startTurn);
+  const markdown = body;
   const filename = `gemini_deep_research_${getDateString()}.md`;
   const blob = new Blob([markdown], { type: 'text/markdown' });
   const url = URL.createObjectURL(blob);
@@ -382,5 +392,272 @@ async function geminiDeepResearchExportMain(startTurn = 1) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }, 1000);
+}
+
+/**
+ * Convert the content inside <deep-research-immersive-panel> into Markdown.
+ * Follows the mapping rules defined in the roadmap, handling common HTML structures
+ * and ignoring UI-only wrapper elements. Produces GitHub-flavored Markdown.
+ */
+function deepResearchPanelToMarkdown(panel) {
+  if (!panel) return '';
+
+  const TRANSPARENT_TAGS = new Set([
+    'DIV','SPAN','SECTION','ARTICLE','MAIN','HEADER','FOOTER','ASIDE','NAV'
+  ]);
+  const DROP_WRAPPERS = new Set([
+    'DEEP-RESEARCH-IMMERSIVE-PANEL','TOOLBAR','RESPONSE-CONTAINER','MESSAGE-CONTENT',
+    'THINKING-PANEL','COLLAPSIBLE-BUTTON','DEEP-RESEARCH-SOURCE-LISTS','CANVAS-CREATE-BUTTON',
+    'MAT-MENU','MAT-ICON','BROWSE-WEB-ITEM','HORIZONTAL-SCROLL-WRAPPER',
+    // generic UI placeholders/noise
+    'RESPONSE-ELEMENT','SOURCE-FOOTNOTE','SOURCES-CAROUSEL-INLINE','END-OF-REPORT-MARKER'
+  ]);
+
+  // Decode HTML entities using the browser
+  const decoder = document.createElement('textarea');
+  const decode = (s) => { decoder.innerHTML = s; return decoder.value; };
+
+  const normalizeQuotes = (s) => s
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u00A0\u2007\u202F]/g, ' ');
+
+  const isBlock = (el) => {
+    const t = el.tagName;
+    return [
+      'P','DIV','SECTION','ARTICLE','UL','OL','LI','PRE','BLOCKQUOTE','TABLE','HR',
+      'H1','H2','H3','H4','H5','H6','HEADER','FOOTER'
+    ].includes(t);
+  };
+
+  const getLangFromClass = (el) => {
+    if (!el || !el.className) return '';
+    const m = String(el.className).match(/language-([\w#+-]+)/i);
+    return m ? m[1] : '';
+  };
+
+  const escapeInlineCode = (s) => s.replace(/`/g, '\\`');
+
+  // Inline renderer returns a string for inline contexts
+  const renderInline = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return normalizeQuotes(decode(node.nodeValue || ''));
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const el = node;
+    const tag = el.tagName;
+    switch (tag) {
+      case 'B':
+      case 'STRONG':
+        return `**${childrenInline(el)}**`;
+      case 'I':
+      case 'EM':
+        return `*${childrenInline(el)}*`;
+      case 'CODE': {
+        // If this <code> lives inside a <pre> we'll handle in block renderer
+        if (el.parentElement && el.parentElement.tagName === 'PRE') return el.textContent || '';
+        return '`' + escapeInlineCode(el.textContent || childrenInline(el)) + '`';
+      }
+      case 'A': {
+        const href = el.getAttribute('href') || '';
+        const text = childrenInline(el) || href;
+        return `[${text}](${href})`;
+      }
+      case 'IMG': {
+        const src = el.getAttribute('src') || '';
+        const alt = el.getAttribute('alt') || '';
+        return `![${alt}](${src})`;
+      }
+      case 'BR':
+        return '\n';
+      default:
+        if (DROP_WRAPPERS.has(tag) || TRANSPARENT_TAGS.has(tag)) {
+          return childrenInline(el);
+        }
+        return childrenInline(el);
+    }
+  };
+
+  const childrenInline = (el) => Array.from(el.childNodes).map(renderInline).join('');
+
+  // Block renderer returns array of lines for block-level nodes
+  const renderBlock = (node, ctx = { listIndent: 0, inTable: false, inBlockquote: false }) => {
+    const lines = [];
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = (node.nodeValue || '').trim();
+      if (text) lines.push(normalizeQuotes(decode(text)));
+      return lines;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return lines;
+    const el = node;
+    const tag = el.tagName;
+
+    if (DROP_WRAPPERS.has(tag)) {
+      Array.from(el.childNodes).forEach((c) => lines.push(...renderBlock(c, ctx)));
+      return lines;
+    }
+
+    switch (tag) {
+      case 'H1': lines.push(`# ${childrenInline(el).trim()}`); lines.push(''); return lines;
+      case 'H2': lines.push(`## ${childrenInline(el).trim()}`); lines.push(''); return lines;
+      case 'H3': lines.push(`### ${childrenInline(el).trim()}`); lines.push(''); return lines;
+      case 'H4': lines.push(`#### ${childrenInline(el).trim()}`); lines.push(''); return lines;
+      case 'H5': lines.push(`##### ${childrenInline(el).trim()}`); lines.push(''); return lines;
+      case 'H6': lines.push(`###### ${childrenInline(el).trim()}`); lines.push(''); return lines;
+      case 'P': {
+        const content = childrenInline(el).trim();
+        if (content) lines.push(content);
+        lines.push('');
+        return lines;
+      }
+      case 'BR':
+        lines.push('');
+        return lines;
+      case 'HR':
+        lines.push('---');
+        lines.push('');
+        return lines;
+      case 'BLOCKQUOTE': {
+        // Render inner as block lines and prefix each with '>'
+        const inner = [];
+        Array.from(el.childNodes).forEach((c) => inner.push(...renderBlock(c, { ...ctx, inBlockquote: true })));
+        const content = collapseBlankLines(inner).map(l => l ? `> ${l}` : '>');
+        lines.push(...content);
+        lines.push('');
+        return lines;
+      }
+      case 'PRE': {
+        // Handle <pre><code class="language-xyz">...</code></pre>
+        let language = '';
+        let codeText = '';
+        const codeEl = el.querySelector(':scope > code');
+        if (codeEl) {
+          language = getLangFromClass(codeEl) || getLangFromClass(el);
+          codeText = codeEl.textContent || '';
+        } else {
+          language = getLangFromClass(el);
+          codeText = el.textContent || '';
+        }
+        lines.push('```' + language);
+        // Preserve code whitespace exactly
+        lines.push(...codeText.replace(/\r\n/g, '\n').split('\n'));
+        lines.push('```');
+        lines.push('');
+        return lines;
+      }
+      case 'UL':
+      case 'OL': {
+        const isOrdered = tag === 'OL';
+        const items = Array.from(el.children).filter(ch => ch.tagName === 'LI');
+        items.forEach((li, idx) => {
+          const prefix = ' '.repeat(ctx.listIndent) + (isOrdered ? '1. ' : '- ');
+          // Split li into inline lead line + nested blocks
+          const liParts = renderListItem(li, { ...ctx, listIndent: ctx.listIndent + 2 });
+          if (liParts.length) {
+            const [first, ...rest] = liParts;
+            lines.push(prefix + first);
+            rest.forEach((ln) => {
+              if (ln === '') { lines.push(''); }
+              else lines.push(' '.repeat(ctx.listIndent + 2) + ln);
+            });
+          } else {
+            lines.push(prefix.trimEnd());
+          }
+        });
+        lines.push('');
+        return lines;
+      }
+      case 'TABLE': {
+        // Build GFM table
+        const rows = [];
+        const headRow = el.querySelector('thead tr') || el.querySelector('tr');
+        const bodyRows = headRow && headRow.parentElement && headRow.parentElement.tagName === 'THEAD'
+          ? Array.from(el.querySelectorAll('tbody tr'))
+          : Array.from(el.querySelectorAll('tr')).slice(1);
+        const headerCells = headRow ? Array.from(headRow.children).filter(n => n.tagName === 'TH' || n.tagName === 'TD') : [];
+        const headers = headerCells.map(c => childrenInline(c).trim());
+        if (headers.length) {
+          rows.push(`| ${headers.join(' | ')} |`);
+          rows.push(`| ${headers.map(() => '---').join(' | ')} |`);
+        }
+        bodyRows.forEach(tr => {
+          const cells = Array.from(tr.children).filter(n => n.tagName === 'TD' || n.tagName === 'TH');
+          const vals = cells.map(c => childrenInline(c).trim());
+          rows.push(`| ${vals.join(' | ')} |`);
+        });
+        lines.push(...rows);
+        lines.push('');
+        return lines;
+      }
+      default: {
+        if (TRANSPARENT_TAGS.has(tag)) {
+          Array.from(el.childNodes).forEach((c) => lines.push(...renderBlock(c, ctx)));
+          return lines;
+        }
+        if (!isBlock(el)) {
+          const content = childrenInline(el).trim();
+          if (content) lines.push(content);
+          lines.push('');
+          return lines;
+        }
+        // Generic block container: descend
+        Array.from(el.childNodes).forEach((c) => lines.push(...renderBlock(c, ctx)));
+        return lines;
+      }
+    }
+  };
+
+  const renderListItem = (li, ctx) => {
+    const out = [];
+    // Separate inline leading text from nested blocks
+    const fragments = [];
+    let encounteredBlock = false;
+    Array.from(li.childNodes).forEach((n) => {
+      if (n.nodeType === Node.ELEMENT_NODE && isBlock(n)) {
+        encounteredBlock = true;
+        const chunk = renderBlock(n, ctx);
+        if (chunk.length) {
+          if (out.length === 0) out.push(''); // placeholder for first line
+          out.push(...chunk);
+        }
+      } else {
+        fragments.push(renderInline(n));
+      }
+    });
+    const firstLine = normalizeInline(fragments.join('')).trim();
+    if (out.length === 0) {
+      out.push(firstLine);
+    } else {
+      out[0] = firstLine;
+    }
+    return collapseBlankLines(out);
+  };
+
+  const normalizeInline = (s) => normalizeQuotes(decode(s)).replace(/\s+/g, (m) => m.includes('\n') ? m : ' ');
+
+  const collapseBlankLines = (arr) => {
+    const res = [];
+    let blank = 0;
+    for (const l of arr) {
+      if (l.trim() === '') {
+        if (blank === 0) res.push('');
+        blank = 1;
+      } else {
+        res.push(rstrip(l));
+        blank = 0;
+      }
+    }
+    return res;
+  };
+
+  const rstrip = (s) => s.replace(/[ \t]+$/g, '');
+
+  // Start rendering: drop the outer panel tag but keep its descendants
+  const lines = [];
+  Array.from(panel.childNodes).forEach((n) => lines.push(...renderBlock(n)));
+  let md = collapseBlankLines(lines).join('\n').replace(/\n{3,}/g, '\n\n');
+  // Strip Gemini-style citations and trim
+  md = removeCitations(md).trim();
+  return md;
 }
  

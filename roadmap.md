@@ -53,6 +53,62 @@ Acceptance:
 Acceptance:
 - Outputs a .md file with only Deep Research content, following the same structure as normal exports.
 
+### HTML → Markdown mapping rules (Deep Research)
+Convert the content within the `<deep-research-immersive-panel>` to clean Markdown using the mappings below. These rules are derived from the attached Deep Research HTML example and common web markup.
+
+- Headings
+  - `<h1>` → `# {text}`
+  - `<h2>` → `## {text}`
+  - `<h3>` → `### {text}`
+  - `<h4>` → `#### {text}` (and keep going for deeper levels if needed)
+- Paragraphs and line breaks
+  - `<p>` → `{text}` followed by a blank line (collapse consecutive empty `<p>`s)
+  - `<br>` → newline
+- Inline formatting
+  - `<b>`, `<strong>` → `**bold**`
+  - `<i>`, `<em>` → `*italic*`
+  - `<code>` (inline) → `` `code` `` (escape backticks inside)
+  - HTML entities (e.g., `&nbsp;`, `&amp;`) → decode to plain text
+- Lists
+  - `<ul><li>…</li></ul>` → `- …` bullets; indent nested lists by two spaces per level
+  - `<ol><li>…</li></ol>` → numbered list using `1. …` (Markdown will auto-number); indent nested lists by two spaces per level
+  - Preserve list item content formatting (inline code, emphasis, etc.)
+- Code blocks
+  - `<pre><code class="language-xyz">…</code></pre>` → fenced block with language:
+    - ```xyz
+      …
+      ```
+  - `<pre>` without `<code>` → fenced block without language:
+    - ```
+      …
+      ```
+- Links and images
+  - `<a href="URL">text</a>` → `[text](URL)` (omit tracking/query params only if safe and intentional)
+  - `<img src="URL" alt="Alt">` → `![Alt](URL)`
+- Tables
+  - `<table>` → GitHub-Flavored Markdown table. Use first row with `<th>` as header when present; otherwise, treat first `<tr>` as header.
+  - Example conversion: `<tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr>` →
+    - `| A | B |`
+    - `| --- | --- |`
+    - `| 1 | 2 |`
+- Blockquotes and rules
+  - `<blockquote>` → prefix each paragraph line with `>`
+  - `<hr>` → `---` on its own line
+- Structural wrappers to ignore/strip (UI-only in the example)
+  - Drop these tags but keep their textual descendants: `deep-research-immersive-panel`, `toolbar`, `response-container`, `message-content`, `thinking-panel`, `collapsible-button`, `deep-research-source-lists`, `canvas-create-button`, `mat-menu`, `mat-icon`, `browse-web-item`, `horizontal-scroll-wrapper`, and other Angular/material wrappers.
+  - Generic containers: treat `<div>` and `<span>` as transparent wrappers (don’t emit Markdown themselves); rely on their child elements to produce blocks/inline content. If a `<div>` contains plain text without block children, render it as a paragraph.
+  - Drop custom placeholders/noise elements entirely (do not render): `response-element`, `source-footnote`, `sources-carousel-inline`, “end-of-report-marker”, and any elements that don’t contribute visible text content.
+  - Ignore all attributes like `class`, `style`, `aria-*`, `data-*`, Angular `ng-*` markers.
+- Whitespace and cleanup
+  - Trim leading/trailing whitespace per block, collapse multiple blank lines to a single blank line (outside code blocks)
+  - Preserve whitespace inside code blocks
+  - Normalize smart quotes and unicode spaces to plain equivalents when reasonable
+  - Remove UI or telemetry text (e.g., button labels not part of the report body)
+
+Notes
+- The provided example uses headings (`<h1>…</h1>`, `<h2>…</h2>`, `<h3>…</h3>`), paragraphs, lists (`<ul>`, `<ol>`, `<li>`), and inline `<code>` heavily—ensure these produce readable Markdown without extra empty lines.
+- If future Deep Research content includes images, links, or tables, the mappings above apply without additional changes.
+
 ## 5) Edge cases and resilience
 - Clipboard blocked or no copy button: Use `textContent` fallback with a note when needed.
 - Streaming/incomplete responses: add small delays/retries or inform the user to wait.
