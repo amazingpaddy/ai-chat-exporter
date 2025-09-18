@@ -65,7 +65,20 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
         dropdown.style.background = '#fff';
         dropdown.style.color = '#222';
       }
-  dropdown.innerHTML = `<label style="font-size:1em;font-weight:bold;" title="A message is a pair of your question and Gemini's response. Export will start from the selected message number.">Export from message number:</label><input id="gemini-turn-input" type="number" min="1" value="1" style="width:60px;margin-left:8px;" title="Enter the message number you want to start exporting from. Each message is a question and its response.">`;
+  dropdown.innerHTML = `
+    <label style="font-size:1em;font-weight:bold;" title="A message is a pair of your question and Gemini's response. Export will start from the selected message number.">Export from message number:</label>
+    <input id="gemini-turn-input" type="number" min="1" value="1" style="width:60px;margin-left:8px;" title="Enter the message number you want to start exporting from. Each message is a question and its response.">
+    <div style="margin-top:10px;">
+      <label style="margin-right:10px;">
+        <input type="radio" name="gemini-export-mode" value="file" checked>
+        Export as file
+      </label>
+      <label>
+        <input type="radio" name="gemini-export-mode" value="clipboard">
+        Export to clipboard
+      </label>
+    </div>
+  `;
       document.body.appendChild(dropdown);
       btn.addEventListener('click', async () => {
         if (dropdown.style.display === 'none') {
@@ -75,13 +88,18 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
         btn.disabled = true;
         btn.textContent = 'Exporting...';
         let startTurn = 1;
+        let exportMode = 'file';
         const input = document.getElementById('gemini-turn-input');
+        const modeRadio = dropdown.querySelector('input[name="gemini-export-mode"]:checked');
         if (input && input.value) {
           startTurn = Math.max(1, parseInt(input.value));
         }
+        if (modeRadio) {
+          exportMode = modeRadio.value;
+        }
         dropdown.style.display = 'none';
         try {
-          await exportHandler(startTurn);
+          await exportHandler(startTurn, exportMode);
         } finally {
           btn.disabled = false;
           btn.textContent = buttonText;
@@ -137,7 +155,7 @@ addExportButton({
  * - Removes citation markers.
  * - Downloads Markdown file.
  */
-async function geminiExportMain(startTurn = 1) {
+async function geminiExportMain(startTurn = 1, exportMode = 'file') {
   /**
    * Sleep helper for async delays.
    * @param {number} ms
@@ -275,16 +293,25 @@ async function geminiExportMain(startTurn = 1) {
   }
   const filename = `gemini_chat_export_${getDateString()}.md`;
 
-  // Download as Markdown file
-  const blob = new Blob([markdown], { type: 'text/markdown' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => {
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, 1000);
+  if (exportMode === 'clipboard') {
+    try {
+      await navigator.clipboard.writeText(markdown);
+      alert('Conversation copied to clipboard!');
+    } catch (e) {
+      alert('Failed to copy conversation to clipboard.');
+    }
+  } else {
+    // Download as Markdown file
+    const blob = new Blob([markdown], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 1000);
+  }
 }
