@@ -163,9 +163,28 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
             }
       // Add event listener for selection dropdown
       const selectDropdown = dropdown.querySelector('#gemini-select-dropdown');
+  // Track last dropdown selection (global for export logic)
+  window.lastDropdownSelection = 'all';
       selectDropdown.addEventListener('change', (e) => {
         ensureCheckboxesInjected();
         const val = e.target.value;
+        window.lastDropdownSelection = val;
+        window.applyDropdownSelection(val);
+        // If user selects a preset, don't set to custom
+      });
+      // Listen for manual checkbox changes to set dropdown to custom
+      document.addEventListener('change', (e) => {
+        if (e.target && e.target.classList && e.target.classList.contains('gemini-export-checkbox')) {
+          // Only set to custom if not already set by dropdown
+          const select = document.getElementById('gemini-select-dropdown');
+          if (select && select.value !== 'custom') {
+            select.value = 'custom';
+            window.lastDropdownSelection = 'custom';
+          }
+        }
+      });
+      // Helper to re-apply dropdown selection to checkboxes
+      window.applyDropdownSelection = function(val) {
         if (val === 'all') {
           document.querySelectorAll('.gemini-export-checkbox').forEach(cb => { cb.checked = true; });
         } else if (val === 'ai') {
@@ -174,8 +193,7 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
         } else if (val === 'none') {
           document.querySelectorAll('.gemini-export-checkbox').forEach(cb => { cb.checked = false; });
         }
-        // If user selects a preset, don't set to custom
-      });
+      }
       // Listen for manual checkbox changes to set dropdown to custom
       document.addEventListener('change', (e) => {
         if (e.target && e.target.classList && e.target.classList.contains('gemini-export-checkbox')) {
@@ -340,6 +358,16 @@ async function geminiExportMain(startTurn = 1, exportMode = 'file') {
       modelRespElem.appendChild(cb);
     }
   });
+  // Re-apply last dropdown selection if not custom
+  try {
+    const select = document.getElementById('gemini-select-dropdown');
+    if (select && typeof window.lastDropdownSelection !== 'undefined' && window.lastDropdownSelection !== 'custom') {
+      select.value = window.lastDropdownSelection;
+      if (typeof window.applyDropdownSelection === 'function') {
+        window.applyDropdownSelection(window.lastDropdownSelection);
+      }
+    }
+  } catch (e) {}
         // Check if any checkboxes are checked
         const anyChecked = Array.from(document.querySelectorAll('.gemini-export-checkbox')).some(cb => cb.checked);
         if (!anyChecked) {
@@ -368,7 +396,7 @@ async function geminiExportMain(startTurn = 1, exportMode = 'file') {
       popup.style.pointerEvents = 'none';
       document.body.appendChild(popup);
       setTimeout(() => { popup.remove(); }, 900);
-      markdown += `### Message ${i + 1}\n\n`;
+  // Removed numbered message heading for cleaner output
       // User message
       const userQueryElem = turn.querySelector('user-query');
       let userQuery = '';
