@@ -101,7 +101,6 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
         dropdown.style.background = '#fff';
         dropdown.style.color = '#222';
       }
-      const defaultFilename = `gemini_chat_export_${(function getDateString() { const d = new Date(); const pad = n => n.toString().padStart(2, '0'); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; })()}`;
       dropdown.innerHTML = `
         <div style="margin-top:10px;">
           <label style="margin-right:10px;">
@@ -114,9 +113,9 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
           </label>
         </div>
         <div id="gemini-filename-row" style="margin-top:10px;display:block;">
-          <label for="gemini-filename-input" style="font-weight:bold;">Filename:</label>
-          <input id="gemini-filename-input" type="text" style="margin-left:8px;padding:2px 8px;width:260px;" value="${defaultFilename}">
-          <span style="display:block;font-size:0.95em;color:#888;margin-top:2px;">Only <b>.md</b> (Markdown) files are supported. Do not include an extension.</span>
+          <label for="gemini-filename-input" style="font-weight:bold;">Filename <span style='color:#888;font-weight:normal;'>(optional)</span>:</label>
+          <input id="gemini-filename-input" type="text" style="margin-left:8px;padding:2px 8px;width:260px;" value="">
+          <span style="display:block;font-size:0.95em;color:#888;margin-top:2px;">Optional. Leave blank to use chat title or timestamp. Only <b>.md</b> (Markdown) files are supported. Do not include an extension.</span>
         </div>
         <div style="margin-top:14px;">
           <label style="font-weight:bold;">Select messages:</label>
@@ -245,16 +244,11 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
         dropdown.style.display = 'none';
         try {
           await exportHandler(1, exportMode, filename);
-          // After export, reset filename input to next default
+          // After export, reset filename input to empty
           if (exportMode === 'file') {
             const filenameInput = dropdown.querySelector('#gemini-filename-input');
             if (filenameInput) {
-              const getDateString = () => {
-                const d = new Date();
-                const pad = n => n.toString().padStart(2, '0');
-                return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-              };
-              filenameInput.value = `gemini_chat_export_${getDateString()}`;
+              filenameInput.value = '';
             }
           }
         } finally {
@@ -497,13 +491,22 @@ async function geminiExportMain(startTurn = 1, exportMode = 'file', customFilena
     const pad = n => n.toString().padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   }
-  let filename = `gemini_chat_export_${getDateString()}.md`;
+  // Use chat title if available, else timestamp, unless user provides filename
+  let filename = '';
+  const titleElem = document.querySelector('title');
+  let title = titleElem ? titleElem.textContent.trim() : '';
   if (exportMode === 'file' && typeof customFilename === 'string' && customFilename.trim()) {
-    // Remove any extension and invalid chars, always add .md
     let base = customFilename.trim().replace(/\.[^/.]+$/, '');
     base = base.replace(/[^a-zA-Z0-9_\-]/g, '_');
     if (!base) base = `gemini_chat_export_${getDateString()}`;
     filename = `${base}.md`;
+  } else {
+    if (title) {
+      let safeTitle = title.replace(/[\\/:*?"<>|.]/g, '').replace(/\s+/g, '_').replace(/^_+|_+$/g, '');
+      filename = safeTitle ? `${safeTitle}_${getDateString()}.md` : `gemini_chat_export_${getDateString()}.md`;
+    } else {
+      filename = `gemini_chat_export_${getDateString()}.md`;
+    }
   }
 
   if (exportMode === 'clipboard') {
