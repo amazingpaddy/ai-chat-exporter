@@ -15,7 +15,7 @@ Save and share your technical and scientific conversations from Gemini and ChatG
 ✅ **Granular Message Selection**: Select exactly which messages to export using checkboxes next to each message.
 ✅ **Selection Presets**: Instantly select all, none, or only AI responses with a dropdown or quick toggles.
 ✅ **Export to Clipboard**: Copy your chat as Markdown directly to your clipboard—no file download needed!
-✅ **Custom Filename**: Edit the filename before exporting to a file. Filenames are sanitized and auto-filled with a timestamp.
+✅ **Custom Filename (Optional)**: Enter a filename if you want, or leave blank to use the chat title or a timestamp. The input is always empty by default and resets after export.
 ✅ **Cleaner Markdown**: No more "Message N" headings—just your conversation, perfectly formatted.
 ✅ **Improved UX**: Checkboxes and selection reset after export, and the UI is more intuitive and accessible.
 ✅ **Bug Fixes**: Selection is preserved after scrolling, and all UI elements work reliably in long chats.
@@ -28,7 +28,7 @@ Save and share your technical and scientific conversations from Gemini and ChatG
 ✅ Go to Gemini (gemini.google.com) or ChatGPT (chatgpt.com) and open any chat.
 ✅ Click the **Export Chat** button at the top right of the page.
 ✅ Use the checkboxes or dropdown to select which messages to export.
-✅ Choose to export as a Markdown file (with a custom filename) or copy to clipboard.
+✅ Choose to export as a Markdown file (with a custom filename, or leave blank for chat title/timestamp) or copy to clipboard.
 
 ➡️ **Hiding the Export Button**
 ✅ Click the extension icon in your Chrome toolbar.
@@ -49,7 +49,7 @@ Save and share your technical and scientific conversations from Gemini and ChatG
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-💬 𝗦𝗨𝗣𝗣𝗢𝗥𝗧 & 𝗙𝗘𝗘𝗗𝗕𝗔𝗖𝗞
+💬 𝗦𝗨𝗣𝗣𝗢𝗥𝗧 & 𝗙𝗘𝗘𝗗𝗕𝗔𝗖𝗸
 This project is 100% open source! Check the source code, report bugs, or contribute on GitHub.
 ➡️ https://github.com/amazingpaddy/gemini-chat-exporter
 
