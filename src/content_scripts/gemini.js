@@ -101,6 +101,7 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
         dropdown.style.background = '#fff';
         dropdown.style.color = '#222';
       }
+      const defaultFilename = `gemini_chat_export_${(function getDateString() { const d = new Date(); const pad = n => n.toString().padStart(2, '0'); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; })()}`;
       dropdown.innerHTML = `
         <div style="margin-top:10px;">
           <label style="margin-right:10px;">
@@ -112,6 +113,11 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
             Export to clipboard
           </label>
         </div>
+        <div id="gemini-filename-row" style="margin-top:10px;display:block;">
+          <label for="gemini-filename-input" style="font-weight:bold;">Filename:</label>
+          <input id="gemini-filename-input" type="text" style="margin-left:8px;padding:2px 8px;width:260px;" value="${defaultFilename}">
+          <span style="display:block;font-size:0.95em;color:#888;margin-top:2px;">Only <b>.md</b> (Markdown) files are supported. Do not include an extension.</span>
+        </div>
         <div style="margin-top:14px;">
           <label style="font-weight:bold;">Select messages:</label>
           <select id="gemini-select-dropdown" style="margin-left:8px;padding:2px 8px;">
@@ -122,6 +128,18 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
           </select>
         </div>
       `;
+      // Show/hide filename input based on export mode
+      function updateFilenameRow() {
+        const fileRow = dropdown.querySelector('#gemini-filename-row');
+        const fileRadio = dropdown.querySelector('input[name="gemini-export-mode"][value="file"]');
+        if (fileRow && fileRadio) {
+          fileRow.style.display = fileRadio.checked ? 'block' : 'none';
+        }
+      }
+      dropdown.querySelectorAll('input[name="gemini-export-mode"]').forEach(radio => {
+        radio.addEventListener('change', updateFilenameRow);
+      });
+      updateFilenameRow();
       document.body.appendChild(dropdown);
             // Helper to inject checkboxes if not present (idempotent)
             function ensureCheckboxesInjected() {
@@ -205,7 +223,7 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
         }
       });
       btn.addEventListener('click', async () => {
-              ensureCheckboxesInjected();
+        ensureCheckboxesInjected();
         if (dropdown.style.display === 'none') {
           dropdown.style.display = '';
           return;
@@ -213,13 +231,32 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
         btn.disabled = true;
         btn.textContent = 'Exporting...';
         let exportMode = 'file';
+        let filename = '';
         const modeRadio = dropdown.querySelector('input[name="gemini-export-mode"]:checked');
         if (modeRadio) {
           exportMode = modeRadio.value;
         }
+        if (exportMode === 'file') {
+          const filenameInput = dropdown.querySelector('#gemini-filename-input');
+          if (filenameInput && filenameInput.value) {
+            filename = filenameInput.value.trim();
+          }
+        }
         dropdown.style.display = 'none';
         try {
-          await exportHandler(1, exportMode);
+          await exportHandler(1, exportMode, filename);
+          // After export, reset filename input to next default
+          if (exportMode === 'file') {
+            const filenameInput = dropdown.querySelector('#gemini-filename-input');
+            if (filenameInput) {
+              const getDateString = () => {
+                const d = new Date();
+                const pad = n => n.toString().padStart(2, '0');
+                return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+              };
+              filenameInput.value = `gemini_chat_export_${getDateString()}`;
+            }
+          }
         } finally {
           btn.disabled = false;
           btn.textContent = buttonText;
@@ -275,7 +312,7 @@ addExportButton({
  * - Removes citation markers.
  * - Downloads Markdown file.
  */
-async function geminiExportMain(startTurn = 1, exportMode = 'file') {
+async function geminiExportMain(startTurn = 1, exportMode = 'file', customFilename = '') {
   /**
    * Sleep helper for async delays.
    * @param {number} ms
@@ -460,12 +497,26 @@ async function geminiExportMain(startTurn = 1, exportMode = 'file') {
     const pad = n => n.toString().padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   }
-  const filename = `gemini_chat_export_${getDateString()}.md`;
+  let filename = `gemini_chat_export_${getDateString()}.md`;
+  if (exportMode === 'file' && typeof customFilename === 'string' && customFilename.trim()) {
+    // Remove any extension and invalid chars, always add .md
+    let base = customFilename.trim().replace(/\.[^/.]+$/, '');
+    base = base.replace(/[^a-zA-Z0-9_\-]/g, '_');
+    if (!base) base = `gemini_chat_export_${getDateString()}`;
+    filename = `${base}.md`;
+  }
 
   if (exportMode === 'clipboard') {
     try {
       await navigator.clipboard.writeText(markdown);
       alert('Conversation copied to clipboard!');
+      // Hide checkboxes and reset dropdown after export
+      document.querySelectorAll('.gemini-export-checkbox').forEach(cb => cb.remove());
+      const select = document.getElementById('gemini-select-dropdown');
+      if (select) {
+        select.value = 'all';
+        window.lastDropdownSelection = 'all';
+      }
     } catch (e) {
       alert('Failed to copy conversation to clipboard.');
     }
@@ -482,5 +533,12 @@ async function geminiExportMain(startTurn = 1, exportMode = 'file') {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     }, 1000);
+    // Hide checkboxes and reset dropdown after export
+    document.querySelectorAll('.gemini-export-checkbox').forEach(cb => cb.remove());
+    const select = document.getElementById('gemini-select-dropdown');
+    if (select) {
+      select.value = 'all';
+      window.lastDropdownSelection = 'all';
+    }
   }
 }
