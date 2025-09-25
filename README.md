@@ -9,6 +9,7 @@ AI Chat Exporter is a Chrome Extension that allows you to export your entire Gem
 - Dedicated "Export Chat" button appears automatically on every Gemini and ChatGPT chat page
 - Option to hide the export button via the extension popup
 - Export from any specific message: Use the dropdown textbox to select the starting message number and export only from that point onward (available for both Gemini and ChatGPT)
+- **Choose export mode for Gemini:** Select between "Export as file" (download Markdown) or "Export to clipboard" (copy the entire conversation to your clipboard) in the export dropdown.
 - For ChatGPT: The exported Markdown uses the conversation title as the main heading and filename (spaces replaced with underscores, invalid filename characters removed)
 - For Gemini: Exported Markdown uses a generic heading and filename, as Gemini does not provide a reliable conversation title in the page source
 - Robust export logic: loads all messages in the current chat, copies perfectly formatted responses, and (for Gemini) removes citation markers
@@ -35,18 +36,19 @@ Support for other LLMs like DeepSeek, Claude, and Grok will be added in future u
 
 
 ### Gemini
-1. Go to [Gemini](https://gemini.google.com/) and open any chat conversation
-2. Click the "Export Chat" button at the top right of the page (it will not overlap your profile icon)
-3. (Optional) Use the dropdown textbox to select the starting message number if you want to export only part of the conversation
-4. Wait for the export to complete. The button will show "Exporting..." during the process
-5. A Markdown file will be downloaded automatically with all messages from the current chat conversation. The filename will be in the format `gemini_chat_export_YYYY-MM-DD_HHMMSS.md` (e.g., `gemini_chat_export_2025-07-16_153012.md`). This ensures each export is unique, even if you update and export the same conversation again.
+1. Go to [Gemini](https://gemini.google.com/) and open any chat conversation.
+2. Click the "Export Chat" button at the top right of the page.
+3. In the export menu, use the **Select messages** dropdown to quickly select "All", "Only answers" (AI responses), or "None". You can also manually check/uncheck any message using the checkboxes on the right of each message. If you make a custom selection, the dropdown will show "Custom".
+4. Choose your export mode: "Export as file" (default) will download a Markdown file, or select "Export to clipboard" to copy the selected messages to your clipboard instead of downloading a file.
+5. Wait for the export to complete. The button will show "Exporting..." during the process.
+6. If you chose file export, a Markdown file will be downloaded automatically with all selected messages from the current chat conversation. The filename will be in the format `gemini_chat_export_YYYY-MM-DD_HHMMSS.md` (e.g., `gemini_chat_export_2025-07-16_153012.md`). If you chose clipboard export, you will see a confirmation popup and can paste the conversation anywhere you like.
+
 
 ### ChatGPT
-1. Go to [ChatGPT](https://chatgpt.com/) and open any chat conversation
-2. Click the "Export Chat" button at the top right of the page
-3. (Optional) Use the dropdown textbox to select the starting message number if you want to export only part of the conversation
-4. Wait for the export to complete. The button will show "Exporting..." during the process
-5. A Markdown file will be downloaded automatically with all messages from the current chat conversation. The filename and heading will match the conversation title (spaces replaced with underscores, invalid filename characters removed), and a timestamp will be appended for uniqueness. The format is `<chat_title>_YYYY-MM-DD_HHMMSS.md` (e.g., `My_Chat_Title_2025-07-16_153012.md`). This ensures each export is unique, even if you update and export the same conversation again.
+1. Go to [ChatGPT](https://chatgpt.com/) and open any chat conversation.
+2. Click the "Export Chat" button at the top right of the page.
+3. Wait for the export to complete. The button will show "Exporting..." during the process.
+4. A Markdown file will be downloaded automatically with all messages from the current chat conversation. The filename and heading will match the conversation title (spaces replaced with underscores, invalid filename characters removed), and a timestamp will be appended for uniqueness. The format is `<chat_title>_YYYY-MM-DD_HHMMSS.md` (e.g., `My_Chat_Title_2025-07-16_153012.md`).
 
 
 ## Permissions

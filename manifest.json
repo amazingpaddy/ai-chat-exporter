@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "AI Chat Exporter",
-  "description": "Exports Gemini or ChatGPT chat conversations to Markdown files.",
-  "version": "3.0.1",
+  "description": "Export Gemini and ChatGPT chats to Markdown with perfect LaTeX math, code, and formatting.",
+  "version": "3.2.0",
   "permissions": [
     "clipboardRead",
     "storage"
