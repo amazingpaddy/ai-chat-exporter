@@ -56,8 +56,9 @@
  * @param {Function} options.exportHandler - Export handler function
  * @param {Function} [options.visibleWhen] - Optional predicate to determine visibility (must return boolean)
  */
-function addExportButton({ id, buttonText, position, exportHandler, visibleWhen }) {
+function addExportButton({ id, buttonText, position, exportHandler, visibleWhen, includeSelectionControls = true }) {
   let observer;
+  const selectionControlsEnabled = includeSelectionControls !== false;
   function ensureBtn(shouldShow) {
     let btn = document.getElementById(id);
     if (!shouldShow) {
@@ -118,6 +119,7 @@ function addExportButton({ id, buttonText, position, exportHandler, visibleWhen 
           <input id="gemini-filename-input" type="text" style="margin-left:8px;padding:2px 8px;width:260px;" value="">
           <span style="display:block;font-size:0.95em;color:#888;margin-top:2px;">Optional. Leave blank to use chat title or timestamp. Only <b>.md</b> (Markdown) files are supported. Do not include an extension.</span>
         </div>
+        ${selectionControlsEnabled ? `
         <div style="margin-top:14px;">
           <label style="font-weight:bold;">Select messages:</label>
           <select id="gemini-select-dropdown" style="margin-left:8px;padding:2px 8px;">
@@ -127,6 +129,7 @@ function addExportButton({ id, buttonText, position, exportHandler, visibleWhen 
             <option value="custom">Custom</option>
           </select>
         </div>
+        ` : ''}
       `;
       // Show/hide filename input based on export mode
       function updateFilenameRow() {
@@ -141,87 +144,79 @@ function addExportButton({ id, buttonText, position, exportHandler, visibleWhen 
       });
       updateFilenameRow();
       document.body.appendChild(dropdown);
-            // Helper to inject checkboxes if not present (idempotent)
-            function ensureCheckboxesInjected() {
-              const turns = Array.from(document.querySelectorAll('div.conversation-container'));
-              turns.forEach((turn) => {
-                // User query checkbox
-                const userQueryElem = turn.querySelector('user-query');
-                if (userQueryElem && !userQueryElem.querySelector('.gemini-export-checkbox')) {
-                  const cb = document.createElement('input');
-                  cb.type = 'checkbox';
-                  cb.className = 'gemini-export-checkbox';
-                  cb.checked = true;
-                  cb.title = 'Include this user message in export';
-                  cb.style.position = 'absolute';
-                  cb.style.right = '28px';
-                  cb.style.top = '8px';
-                  cb.style.zIndex = '10000';
-                  cb.style.transform = 'scale(1.2)';
-                  userQueryElem.style.position = 'relative';
-                  userQueryElem.appendChild(cb);
-                }
-                // Model response checkbox
-                const modelRespElem = turn.querySelector('model-response');
-                if (modelRespElem && !modelRespElem.querySelector('.gemini-export-checkbox')) {
-                  const cb = document.createElement('input');
-                  cb.type = 'checkbox';
-                  cb.className = 'gemini-export-checkbox';
-                  cb.checked = true;
-                  cb.title = 'Include this Gemini response in export';
-                  cb.style.position = 'absolute';
-                  cb.style.right = '28px';
-                  cb.style.top = '8px';
-                  cb.style.zIndex = '10000';
-                  cb.style.transform = 'scale(1.2)';
-                  modelRespElem.style.position = 'relative';
-                  modelRespElem.appendChild(cb);
-                }
-              });
+      let ensureCheckboxesInjected = () => {};
+      let selectDropdown = null;
+      if (selectionControlsEnabled) {
+        ensureCheckboxesInjected = function ensureCheckboxesInjected() {
+          const turns = Array.from(document.querySelectorAll('div.conversation-container'));
+          turns.forEach((turn) => {
+            const userQueryElem = turn.querySelector('user-query');
+            if (userQueryElem && !userQueryElem.querySelector('.gemini-export-checkbox')) {
+              const cb = document.createElement('input');
+              cb.type = 'checkbox';
+              cb.className = 'gemini-export-checkbox';
+              cb.checked = true;
+              cb.title = 'Include this user message in export';
+              cb.style.position = 'absolute';
+              cb.style.right = '28px';
+              cb.style.top = '8px';
+              cb.style.zIndex = '10000';
+              cb.style.transform = 'scale(1.2)';
+              userQueryElem.style.position = 'relative';
+              userQueryElem.appendChild(cb);
             }
-      // Add event listener for selection dropdown
-      const selectDropdown = dropdown.querySelector('#gemini-select-dropdown');
-  // Track last dropdown selection (global for export logic)
-  window.lastDropdownSelection = 'all';
-      selectDropdown.addEventListener('change', (e) => {
-        ensureCheckboxesInjected();
-        const val = e.target.value;
-        window.lastDropdownSelection = val;
-        window.applyDropdownSelection(val);
-        // If user selects a preset, don't set to custom
-      });
-      // Listen for manual checkbox changes to set dropdown to custom
-      document.addEventListener('change', (e) => {
-        if (e.target && e.target.classList && e.target.classList.contains('gemini-export-checkbox')) {
-          // Only set to custom if not already set by dropdown
-          const select = document.getElementById('gemini-select-dropdown');
-          if (select && select.value !== 'custom') {
-            select.value = 'custom';
-            window.lastDropdownSelection = 'custom';
+            const modelRespElem = turn.querySelector('model-response');
+            if (modelRespElem && !modelRespElem.querySelector('.gemini-export-checkbox')) {
+              const cb = document.createElement('input');
+              cb.type = 'checkbox';
+              cb.className = 'gemini-export-checkbox';
+              cb.checked = true;
+              cb.title = 'Include this Gemini response in export';
+              cb.style.position = 'absolute';
+              cb.style.right = '28px';
+              cb.style.top = '8px';
+              cb.style.zIndex = '10000';
+              cb.style.transform = 'scale(1.2)';
+              modelRespElem.style.position = 'relative';
+              modelRespElem.appendChild(cb);
+            }
+          });
+        };
+        selectDropdown = dropdown.querySelector('#gemini-select-dropdown');
+        if (selectDropdown) {
+          if (typeof window.lastDropdownSelection === 'undefined') {
+            window.lastDropdownSelection = 'all';
           }
+          selectDropdown.addEventListener('change', (e) => {
+            ensureCheckboxesInjected();
+            const val = e.target.value;
+            window.lastDropdownSelection = val;
+            if (typeof window.applyDropdownSelection === 'function') {
+              window.applyDropdownSelection(val);
+            }
+          });
         }
-      });
-      // Helper to re-apply dropdown selection to checkboxes
-      window.applyDropdownSelection = function(val) {
-        if (val === 'all') {
-          document.querySelectorAll('.gemini-export-checkbox').forEach(cb => { cb.checked = true; });
-        } else if (val === 'ai') {
-          document.querySelectorAll('user-query .gemini-export-checkbox').forEach(cb => { cb.checked = false; });
-          document.querySelectorAll('model-response .gemini-export-checkbox').forEach(cb => { cb.checked = true; });
-        } else if (val === 'none') {
-          document.querySelectorAll('.gemini-export-checkbox').forEach(cb => { cb.checked = false; });
-        }
+        const checkboxListener = (e) => {
+          if (e.target && e.target.classList && e.target.classList.contains('gemini-export-checkbox')) {
+            const select = document.getElementById('gemini-select-dropdown');
+            if (select && select.value !== 'custom') {
+              select.value = 'custom';
+              window.lastDropdownSelection = 'custom';
+            }
+          }
+        };
+        document.addEventListener('change', checkboxListener);
+        window.applyDropdownSelection = function(val) {
+          if (val === 'all') {
+            document.querySelectorAll('.gemini-export-checkbox').forEach(cb => { cb.checked = true; });
+          } else if (val === 'ai') {
+            document.querySelectorAll('user-query .gemini-export-checkbox').forEach(cb => { cb.checked = false; });
+            document.querySelectorAll('model-response .gemini-export-checkbox').forEach(cb => { cb.checked = true; });
+          } else if (val === 'none') {
+            document.querySelectorAll('.gemini-export-checkbox').forEach(cb => { cb.checked = false; });
+          }
+        };
       }
-      // Listen for manual checkbox changes to set dropdown to custom
-      document.addEventListener('change', (e) => {
-        if (e.target && e.target.classList && e.target.classList.contains('gemini-export-checkbox')) {
-          // Only set to custom if not already set by dropdown
-          const select = document.getElementById('gemini-select-dropdown');
-          if (select && select.value !== 'custom') {
-            select.value = 'custom';
-          }
-        }
-      });
       btn.addEventListener('click', async () => {
         ensureCheckboxesInjected();
         if (dropdown.style.display === 'none') {
@@ -310,7 +305,8 @@ addExportButton({
   buttonText: 'Export Deep Research Report',
   position: { top: '124px', right: '20px' }, // 44px below the Export Chat button
   exportHandler: geminiDeepResearchExportMain,
-  visibleWhen: () => !!document.querySelector('deep-research-immersive-panel')
+  visibleWhen: () => !!document.querySelector('deep-research-immersive-panel'),
+  includeSelectionControls: false
 });
 
 /**
@@ -741,7 +737,17 @@ async function geminiDeepResearchExportMain(startTurn = 1) {
     body = header + body + '\n';
   }
   const markdown = body;
-  const filename = `gemini_deep_research_${getDateString()}.md`;
+  const dateString = getDateString();
+  const heading = panel.querySelector('h2');
+  const rawTitle = heading ? heading.textContent.trim() : '';
+  let safeTitle = rawTitle
+    .replace(/[\\/:*?"<>|.]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  if (!safeTitle) {
+    safeTitle = `gemini_deep_research_${dateString}`;
+  }
+  const filename = `${safeTitle}.md`;
   const blob = new Blob([markdown], { type: 'text/markdown' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -767,12 +773,35 @@ function deepResearchPanelToMarkdown(panel) {
     'DIV','SPAN','SECTION','ARTICLE','MAIN','HEADER','FOOTER','ASIDE','NAV'
   ]);
   const DROP_WRAPPERS = new Set([
-    'DEEP-RESEARCH-IMMERSIVE-PANEL','TOOLBAR','RESPONSE-CONTAINER','MESSAGE-CONTENT',
+    'DEEP-RESEARCH-IMMERSIVE-PANEL','TOOLBAR','IMMERSIVE-TOOLBAR','RESPONSE-CONTAINER','MESSAGE-CONTENT',
     'THINKING-PANEL','COLLAPSIBLE-BUTTON','DEEP-RESEARCH-SOURCE-LISTS','CANVAS-CREATE-BUTTON',
     'MAT-MENU','MAT-ICON','BROWSE-WEB-ITEM','HORIZONTAL-SCROLL-WRAPPER',
     // generic UI placeholders/noise
     'RESPONSE-ELEMENT','SOURCE-FOOTNOTE','SOURCES-CAROUSEL-INLINE','END-OF-REPORT-MARKER'
   ]);
+
+  const TOOLBAR_KEYWORDS = [
+    'toolbar','immersive-toolbar','dr-toolbar','deep-research-toolbar','actions-bar','action-bar','command-bar'
+  ];
+
+  const toStringSafe = (value) => {
+    if (!value) return '';
+    if (typeof value === 'string') return value;
+    try { return String(value); } catch (e) { return ''; }
+  };
+
+  const isToolbarElement = (el) => {
+    if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+    const tag = el.tagName || '';
+    if (tag === 'TOOLBAR' || tag === 'IMMERSIVE-TOOLBAR') return true;
+    const role = toStringSafe(el.getAttribute && el.getAttribute('role')).toLowerCase();
+    if (role === 'toolbar') return true;
+    const dataTestId = toStringSafe(el.getAttribute && el.getAttribute('data-test-id')).toLowerCase();
+    if (dataTestId && TOOLBAR_KEYWORDS.some(keyword => dataTestId.includes(keyword))) return true;
+    const classes = toStringSafe(el.className).toLowerCase();
+    if (classes && TOOLBAR_KEYWORDS.some(keyword => classes.includes(keyword))) return true;
+    return false;
+  };
 
   // Decode HTML entities using the browser
   const decoder = document.createElement('textarea');
@@ -806,6 +835,7 @@ function deepResearchPanelToMarkdown(panel) {
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return '';
     const el = node;
+    if (isToolbarElement(el)) return '';
     const tag = el.tagName;
     switch (tag) {
       case 'B':
@@ -851,6 +881,7 @@ function deepResearchPanelToMarkdown(panel) {
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return lines;
     const el = node;
+    if (isToolbarElement(el)) return lines;
     const tag = el.tagName;
 
     if (DROP_WRAPPERS.has(tag)) {
