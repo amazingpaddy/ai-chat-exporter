@@ -65,6 +65,7 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
         dropdown.style.background = '#fff';
         dropdown.style.color = '#222';
       }
+      const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
       dropdown.innerHTML = `
         <div style="margin-top:10px;">
           <label style="margin-right:10px;">
@@ -78,12 +79,12 @@ function addExportButton({ id, buttonText, position, exportHandler }) {
         </div>
         <div id="chatgpt-filename-row" style="margin-top:10px;display:block;">
           <label for="chatgpt-filename-input" style="font-weight:bold;">Filename <span style='color:#888;font-weight:normal;'>(optional)</span>:</label>
-          <input id="chatgpt-filename-input" type="text" style="margin-left:8px;padding:2px 8px;width:260px;" value="">
+          <input id="chatgpt-filename-input" type="text" style="margin-left:8px;padding:2px 8px;width:260px;${isDark ? 'background:#111;color:#fff;border:1px solid #444;' : 'background:#fff;color:#222;border:1px solid #ccc;'}" value="">
           <span style="display:block;font-size:0.95em;color:#888;margin-top:2px;">Optional. Leave blank to use chat title or timestamp. Only <b>.md</b> (Markdown) files are supported. Do not include an extension.</span>
         </div>
         <div style="margin-top:14px;">
           <label style="font-weight:bold;">Select messages:</label>
-          <select id="chatgpt-select-dropdown" style="margin-left:8px;padding:2px 8px;">
+          <select id="chatgpt-select-dropdown" style="margin-left:8px;padding:2px 8px;${isDark ? 'background:#111;color:#fff;border:1px solid #444;' : 'background:#fff;color:#222;border:1px solid #ccc;'}">
             <option value="all">All</option>
             <option value="ai">Only answers</option>
             <option value="none">None</option>
