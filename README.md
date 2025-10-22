@@ -4,17 +4,19 @@ AI Chat Exporter is a Chrome Extension that allows you to export your entire Gem
 
 ## Features
 
-- Export your full Gemini or ChatGPT chat conversation to Markdown, preserving formatting (code, tables, LaTeX, etc.)
-- Dedicated "Export Chat" button appears automatically on every Gemini and ChatGPT chat page
+<!-- Export your full chat conversation from any supported LLM chat page as Markdown, preserving original formatting (code blocks, tables, LaTeX-style math, etc.). -->
+- Export your full Gemini or ChatGPT chat conversation as Markdown, preserving original formatting (code blocks, tables, LaTeX-style math, etc.)
+<!-- Dedicated "Export Chat" button appears at the top right of every supported LLM chat page. -->
+- Dedicated "Export Chat" button appears at the top right of every Gemini and ChatGPT chat page
 - Option to hide the export button via the extension popup
 - Granular message selection: Use checkboxes next to each message to select exactly what to export
 - Selection presets: Instantly select all, none, or only AI responses with a dropdown or quick toggles
-- Export to clipboard: Copy your chat as Markdown directly to your clipboard—no file download needed
-- Custom filename (optional): Enter a filename, or leave blank to use the chat title or a timestamp. The input is always empty by default and resets after export
-- Robust export logic: loads all messages in the current chat, copies perfectly formatted responses, and (for Gemini) removes citation markers
-- Improved error handling: If copying a message fails, a placeholder is added in the Markdown file instructing you to manually copy and paste the missing content
+- Export to clipboard: Copy your exported chat directly to your clipboard—no file download needed
+- Custom filename (optional): Choose your own, or leave blank to use the chat title or a timestamp. The input is always empty by default and resets after export
+- Robust export logic: Ensures conversations are fully loaded before copying perfectly formatted responses; Also removes citation markers (Gemini only)
+- Improved error handling: Placeholders are added for messages that failed to copy, helping you manually copy and paste the missing content
 - Dark mode support: Export controls display correctly in both light and dark themes
-- No build step required
+- Ready to install, no building required
 - Open source under the Apache License 2.0
 
 ## Installation
