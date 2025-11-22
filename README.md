@@ -41,9 +41,9 @@ Support for other LLMs like DeepSeek, Claude, and Grok will be added in future u
 2. Click the "Export Chat" button at the top right of the page.
 3. In the export menu, use the **Select messages** dropdown to quickly select "All", "Only answers" (AI responses), or "None". You can also manually check/uncheck any message using the checkboxes on the right of each message. If you make a custom selection, the dropdown will show "Custom".
 4. Choose your export mode: "Export as file" (default) will download a Markdown file, or select "Export to clipboard" to copy the selected messages to your clipboard instead of downloading a file.
-5. Optionally enter a filename, or leave blank to use the chat title or timestamp. The input is always empty by default and resets after export.
+5. Optionally enter a filename, or leave blank to automatically use the conversation title (if available) or timestamp. The input is always empty by default and resets after export.
 6. Wait for the export to complete. The button will show "Exporting..." during the process.
-7. If you chose file export, a Markdown file will be downloaded automatically with all selected messages from the current chat conversation. The filename will be in the format `gemini_chat_export_YYYY-MM-DD_HHMMSS.md` (e.g., `gemini_chat_export_2025-07-16_153012.md`). If you chose clipboard export, you will see a confirmation popup and can paste the conversation anywhere you like.
+7. If you chose file export, a Markdown file will be downloaded automatically with all selected messages from the current chat conversation. The filename and heading will use the conversation title if available (spaces replaced with underscores, invalid filename characters removed), with a timestamp appended for uniqueness. The format is `<conversation_title>_YYYY-MM-DD_HHMMSS.md` (e.g., `My_Conversation_2025-11-22_153012.md`). If no conversation title is found, it defaults to `gemini_chat_export_YYYY-MM-DD_HHMMSS.md`. If you chose clipboard export, you will see a confirmation popup and can paste the conversation anywhere you like.
 
 ### ChatGPT
 1. Go to [ChatGPT](https://chatgpt.com/) and open any chat conversation.

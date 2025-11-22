@@ -406,7 +406,15 @@ async function geminiExportMain(startTurn = 1, exportMode = 'file', customFilena
           alert('Please select at least one message to export using the checkboxes or the dropdown.');
           return;
         }
-  let markdown = `# Gemini Chat Export\n\n> Exported on: ${new Date().toLocaleString()}\n\n---\n\n`;
+  // Get conversation title from title card
+  let conversationTitle = '';
+  const titleCard = document.querySelector('.conversation-title');
+  if (titleCard) {
+    conversationTitle = titleCard.textContent.trim();
+  }
+  let markdown = conversationTitle 
+    ? `# ${conversationTitle}\n\n> Exported on: ${new Date().toLocaleString()}\n\n---\n\n`
+    : `# Gemini Chat Export\n\n> Exported on: ${new Date().toLocaleString()}\n\n---\n\n`;
   // Build Markdown for each turn, but only include checked messages
   try {
     for (let i = startTurn - 1; i < turns.length; i++) {
@@ -492,21 +500,28 @@ async function geminiExportMain(startTurn = 1, exportMode = 'file', customFilena
     const pad = n => n.toString().padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   }
-  // Use chat title if available, else timestamp, unless user provides filename
+  // Priority: custom filename > conversation title > page title > timestamp
   let filename = '';
-  const titleElem = document.querySelector('title');
-  let title = titleElem ? titleElem.textContent.trim() : '';
   if (exportMode === 'file' && typeof customFilename === 'string' && customFilename.trim()) {
     let base = customFilename.trim().replace(/\.[^/.]+$/, '');
     base = base.replace(/[^a-zA-Z0-9_\-]/g, '_');
     if (!base) base = `gemini_chat_export_${getDateString()}`;
     filename = `${base}.md`;
   } else {
-    if (title) {
-      let safeTitle = title.replace(/[\\/:*?"<>|.]/g, '').replace(/\s+/g, '_').replace(/^_+|_+$/g, '');
+    // Try conversation title from title card first
+    if (conversationTitle) {
+      let safeTitle = conversationTitle.replace(/[\\/:*?"<>|.]/g, '').replace(/\s+/g, '_').replace(/^_+|_+$/g, '');
       filename = safeTitle ? `${safeTitle}_${getDateString()}.md` : `gemini_chat_export_${getDateString()}.md`;
     } else {
-      filename = `gemini_chat_export_${getDateString()}.md`;
+      // Fallback to page title
+      const titleElem = document.querySelector('title');
+      let title = titleElem ? titleElem.textContent.trim() : '';
+      if (title) {
+        let safeTitle = title.replace(/[\\/:*?"<>|.]/g, '').replace(/\s+/g, '_').replace(/^_+|_+$/g, '');
+        filename = safeTitle ? `${safeTitle}_${getDateString()}.md` : `gemini_chat_export_${getDateString()}.md`;
+      } else {
+        filename = `gemini_chat_export_${getDateString()}.md`;
+      }
     }
   }
 
