@@ -11,6 +11,7 @@
   // ============================================================================
   const CONFIG = {
     BUTTON_ID: 'gemini-export-btn',
+    BULK_BUTTON_ID: 'gemini-bulk-export-btn',
     DROPDOWN_ID: 'gemini-export-dropdown',
     FILENAME_INPUT_ID: 'gemini-filename-input',
     SELECT_DROPDOWN_ID: 'gemini-select-dropdown',
@@ -23,7 +24,8 @@
       USER_QUERY: 'user-query',
       MODEL_RESPONSE: 'model-response',
       COPY_BUTTON: 'button[data-test-id="copy-button"]',
-      CONVERSATION_TITLE: '.conversation-title'
+      CONVERSATION_TITLE: '.conversation-title',
+      SIDEBAR_CONVERSATIONS: 'a[href*="/app/"]'
     },
     
     TIMING: {
@@ -34,12 +36,16 @@
       POPUP_DURATION: 900,
       MAX_SCROLL_ATTEMPTS: 60,
       MAX_STABLE_SCROLLS: 4,
-      MAX_CLIPBOARD_ATTEMPTS: 10
+      MAX_CLIPBOARD_ATTEMPTS: 10,
+      BULK_NAV_DELAY: 3000,
+      BULK_EXPORT_DELAY: 2000
     },
     
     STYLES: {
       BUTTON_PRIMARY: '#1a73e8',
       BUTTON_HOVER: '#1765c1',
+      BULK_PRIMARY: '#8e44ad',
+      BULK_HOVER: '#732d91',
       DARK_BG: '#111',
       DARK_TEXT: '#fff',
       DARK_BORDER: '#444',
@@ -256,7 +262,7 @@
       const btn = document.createElement('button');
       btn.id = CONFIG.BUTTON_ID;
       btn.textContent = 'Export Chat';
-      
+
       Object.assign(btn.style, {
         position: 'fixed',
         top: '80px',
@@ -273,10 +279,38 @@
         fontWeight: 'bold',
         transition: 'background 0.2s'
       });
-      
+
       btn.addEventListener('mouseenter', () => btn.style.background = CONFIG.STYLES.BUTTON_HOVER);
       btn.addEventListener('mouseleave', () => btn.style.background = CONFIG.STYLES.BUTTON_PRIMARY);
-      
+
+      return btn;
+    }
+
+    static createBulkButton() {
+      const btn = document.createElement('button');
+      btn.id = CONFIG.BULK_BUTTON_ID;
+      btn.textContent = 'Export ALL Chats';
+
+      Object.assign(btn.style, {
+        position: 'fixed',
+        top: '120px',
+        right: '20px',
+        zIndex: '9999',
+        padding: '8px 16px',
+        background: CONFIG.STYLES.BULK_PRIMARY,
+        color: '#fff',
+        border: 'none',
+        borderRadius: '6px',
+        fontSize: '1em',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+        cursor: 'pointer',
+        fontWeight: 'bold',
+        transition: 'background 0.2s'
+      });
+
+      btn.addEventListener('mouseenter', () => btn.style.background = CONFIG.STYLES.BULK_HOVER);
+      btn.addEventListener('mouseleave', () => btn.style.background = CONFIG.STYLES.BULK_PRIMARY);
+
       return btn;
     }
 
@@ -505,6 +539,219 @@
   }
 
   // ============================================================================
+  // CONVERSATION FINDER - Gets all conversation URLs from sidebar
+  // ============================================================================
+  class ConversationFinder {
+    getAllConversationLinks() {
+      const links = document.querySelectorAll(CONFIG.SELECTORS.SIDEBAR_CONVERSATIONS);
+      const conversations = [];
+      const seen = new Set();
+
+      links.forEach(link => {
+        const href = link.getAttribute('href');
+        if (href && href.includes('/app/') && !seen.has(href)) {
+          seen.add(href);
+          const title = link.textContent?.trim() || 'Untitled';
+          const idMatch = href.match(/\/app\/([a-f0-9-]+)/);
+          conversations.push({
+            url: `https://gemini.google.com${href}`,
+            id: idMatch ? idMatch[1] : href,
+            title: title
+          });
+        }
+      });
+
+      return conversations;
+    }
+
+    async scrollSidebarToLoadAll() {
+      const sidebar = document.querySelector('mat-sidenav, nav, [role="navigation"]');
+      if (!sidebar) return;
+
+      let lastCount = 0;
+      let stableCount = 0;
+
+      while (stableCount < 3) {
+        const links = this.getAllConversationLinks();
+        if (links.length === lastCount) {
+          stableCount++;
+        } else {
+          stableCount = 0;
+          lastCount = links.length;
+        }
+        sidebar.scrollTop = sidebar.scrollHeight;
+        await Utils.sleep(1000);
+      }
+    }
+  }
+
+  // ============================================================================
+  // BULK EXPORT SERVICE
+  // ============================================================================
+  class BulkExportService {
+    constructor(conversationFinder, exportService) {
+      this.conversationFinder = conversationFinder;
+      this.exportService = exportService;
+      this.aborted = false;
+    }
+
+    abort() {
+      this.aborted = true;
+    }
+
+    async exportAllConversations(progressCallback) {
+      this.aborted = false;
+
+      progressCallback('Loading conversation list from sidebar...');
+      await this.conversationFinder.scrollSidebarToLoadAll();
+
+      const conversations = this.conversationFinder.getAllConversationLinks();
+
+      if (conversations.length === 0) {
+        throw new Error('No conversations found. Make sure the sidebar is visible.');
+      }
+
+      progressCallback(`Found ${conversations.length} conversations. Starting export...`);
+
+      const results = [];
+
+      for (let i = 0; i < conversations.length; i++) {
+        if (this.aborted) {
+          progressCallback(`Export cancelled. Exported ${results.length} of ${conversations.length} conversations.`);
+          break;
+        }
+
+        const conv = conversations[i];
+        progressCallback(`Exporting ${i + 1}/${conversations.length}: ${conv.title.substring(0, 40)}...`);
+
+        try {
+          window.location.href = conv.url;
+          await Utils.sleep(CONFIG.TIMING.BULK_NAV_DELAY);
+
+          // Wait for content to load
+          await this.waitForContent();
+
+          // Get conversation content
+          const turns = Array.from(document.querySelectorAll(CONFIG.SELECTORS.CONVERSATION_TURN));
+
+          if (turns.length > 0) {
+            const title = this.exportService.getConversationTitle() || conv.title;
+            let markdown = `# ${title}\n\n`;
+            markdown += `> Exported from Gemini on: ${new Date().toLocaleString()}\n`;
+            markdown += `> Conversation ID: ${conv.id}\n\n---\n\n`;
+
+            for (const turn of turns) {
+              // User message
+              const userQueryElem = turn.querySelector(CONFIG.SELECTORS.USER_QUERY);
+              if (userQueryElem) {
+                const userQuery = userQueryElem.textContent.trim();
+                markdown += `## 👤 You\n\n${userQuery}\n\n`;
+              }
+
+              // Model response - try to use copy button
+              const modelRespElem = turn.querySelector(CONFIG.SELECTORS.MODEL_RESPONSE);
+              if (modelRespElem) {
+                modelRespElem.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+                await Utils.sleep(300);
+
+                const copyBtn = turn.querySelector(CONFIG.SELECTORS.COPY_BUTTON);
+                let responseText = '';
+
+                if (copyBtn) {
+                  try {
+                    await navigator.clipboard.writeText('');
+                    copyBtn.click();
+                    await Utils.sleep(300);
+                    responseText = await navigator.clipboard.readText();
+                  } catch (e) {
+                    responseText = modelRespElem.textContent.trim();
+                  }
+                } else {
+                  responseText = modelRespElem.textContent.trim();
+                }
+
+                responseText = Utils.removeCitations(responseText);
+                markdown += `## 🤖 Gemini\n\n${responseText}\n\n`;
+              }
+
+              markdown += '---\n\n';
+            }
+
+            results.push({
+              id: conv.id,
+              title: title,
+              markdown: markdown,
+              messageCount: turns.length
+            });
+          }
+
+        } catch (err) {
+          console.error(`Failed to export ${conv.id}:`, err);
+          results.push({
+            id: conv.id,
+            title: conv.title,
+            error: err.message
+          });
+        }
+
+        await Utils.sleep(CONFIG.TIMING.BULK_EXPORT_DELAY);
+      }
+
+      return results;
+    }
+
+    async waitForContent() {
+      let attempts = 0;
+      while (attempts < 20) {
+        const turns = document.querySelectorAll(CONFIG.SELECTORS.CONVERSATION_TURN);
+        if (turns.length > 0) return;
+        await Utils.sleep(500);
+        attempts++;
+      }
+    }
+
+    createBulkExportFile(results) {
+      const timestamp = Utils.getDateString();
+
+      let combinedMarkdown = `# Gemini Conversations Export\n\n`;
+      combinedMarkdown += `> Exported on: ${new Date().toLocaleString()}\n`;
+      combinedMarkdown += `> Total conversations: ${results.length}\n\n`;
+      combinedMarkdown += `---\n\n# Table of Contents\n\n`;
+
+      results.forEach((r, i) => {
+        if (!r.error) {
+          combinedMarkdown += `${i + 1}. [${r.title}](#conversation-${i + 1})\n`;
+        }
+      });
+
+      combinedMarkdown += `\n---\n\n`;
+
+      results.forEach((r, i) => {
+        if (!r.error) {
+          combinedMarkdown += `<a id="conversation-${i + 1}"></a>\n\n`;
+          combinedMarkdown += r.markdown;
+          combinedMarkdown += `\n\n`;
+        }
+      });
+
+      const blob = new Blob([combinedMarkdown], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gemini_all_chats_${timestamp}.md`;
+      document.body.appendChild(a);
+      a.click();
+
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 1000);
+
+      return `gemini_all_chats_${timestamp}.md`;
+    }
+  }
+
+  // ============================================================================
   // EXPORT CONTROLLER
   // ============================================================================
   class ExportController {
@@ -512,8 +759,12 @@
       this.checkboxManager = new CheckboxManager();
       this.selectionManager = new SelectionManager(this.checkboxManager);
       this.exportService = new ExportService(this.checkboxManager);
+      this.conversationFinder = new ConversationFinder();
+      this.bulkExportService = new BulkExportService(this.conversationFinder, this.exportService);
       this.button = null;
+      this.bulkButton = null;
       this.dropdown = null;
+      this.isBulkExporting = false;
     }
 
     init() {
@@ -524,11 +775,13 @@
 
     createUI() {
       this.button = UIBuilder.createButton();
+      this.bulkButton = UIBuilder.createBulkButton();
       this.dropdown = UIBuilder.createDropdown();
-      
+
       document.body.appendChild(this.dropdown);
       document.body.appendChild(this.button);
-      
+      document.body.appendChild(this.bulkButton);
+
       this.setupFilenameRowToggle();
     }
 
@@ -550,6 +803,9 @@
     attachEventListeners() {
       // Button click
       this.button.addEventListener('click', () => this.handleButtonClick());
+
+      // Bulk export button
+      this.bulkButton.addEventListener('click', () => this.handleBulkExport());
 
       // Selection dropdown
       const selectDropdown = this.dropdown.querySelector(`#${CONFIG.SELECT_DROPDOWN_ID}`);
@@ -616,6 +872,53 @@
       } finally {
         this.button.disabled = false;
         this.button.textContent = 'Export Chat';
+      }
+    }
+
+    async handleBulkExport() {
+      if (this.isBulkExporting) {
+        this.bulkExportService.abort();
+        return;
+      }
+
+      const confirmed = confirm(
+        'This will export ALL your Gemini conversations.\n\n' +
+        'The browser will navigate through each conversation to extract content.\n' +
+        'This may take several minutes depending on how many conversations you have.\n\n' +
+        'Continue?'
+      );
+
+      if (!confirmed) return;
+
+      this.isBulkExporting = true;
+      this.bulkButton.textContent = 'Cancel Export';
+      this.bulkButton.style.background = '#dc3545';
+      this.button.style.display = 'none';
+
+      const notification = Utils.createNotification('Starting bulk export...');
+      const updateNotification = (msg) => {
+        notification.textContent = msg;
+      };
+
+      try {
+        const results = await this.bulkExportService.exportAllConversations(updateNotification);
+
+        if (results.length > 0) {
+          const filename = this.bulkExportService.createBulkExportFile(results);
+          const successCount = results.filter(r => !r.error).length;
+          notification.textContent = `✓ Exported ${successCount} conversations to ${filename}`;
+          setTimeout(() => notification.remove(), 5000);
+        }
+
+      } catch (error) {
+        console.error('Bulk export error:', error);
+        notification.textContent = `Bulk export failed: ${error.message}`;
+        setTimeout(() => notification.remove(), 5000);
+      } finally {
+        this.isBulkExporting = false;
+        this.bulkButton.textContent = 'Export ALL Chats';
+        this.bulkButton.style.background = CONFIG.STYLES.BULK_PRIMARY;
+        this.button.style.display = '';
       }
     }
 
