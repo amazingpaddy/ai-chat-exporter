@@ -8,8 +8,9 @@
     "storage"
   ],
   "host_permissions": [
-  "https://gemini.google.com/*",
-  "https://chatgpt.com/*"
+    "https://gemini.google.com/*",
+    "https://chatgpt.com/*",
+    "https://chat.deepseek.com/*"
   ],
   "icons": {
     "16": "icons/icon16.png",
@@ -25,6 +26,11 @@
     {
       "matches": ["https://chatgpt.com/*"],
       "js": ["src/content_scripts/chatgpt.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://chat.deepseek.com/*"],
+      "js": ["src/content_scripts/deepseek.js"],
       "run_at": "document_idle"
     }
   ],
