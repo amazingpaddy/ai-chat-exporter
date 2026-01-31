@@ -16,10 +16,10 @@
     EXPORT_MODE_NAME: 'deepseek-export-mode',
 
     SELECTORS: {
-      // 对话列表容器（用于滚动加载）
       CHAT_CONTAINER: 'main [class*="scroll"], main [class*="chat"], [class*="conversation"] [class*="scroll"], [class*="message-list"]',
-      // 导出来源：页面上所有 .ds-markdown，每个为一轮，不依赖用户消息选择器
       DS_MARKDOWN: '.ds-markdown',
+      // 用户发送的消息（sample.html 中用户问题在 .ds-message 内，且该条不包含 .ds-markdown）
+      DS_MESSAGE: '.ds-message',
       CONVERSATION_TITLE: 'h1, [class*="title"], [class*="Title"]'
     },
 
@@ -63,11 +63,14 @@
   }
 
   class StringUtils {
+    /** 仅移除非法文件名字符，保留中文等 Unicode */
     static sanitizeFilename(text) {
+      if (!text || typeof text !== 'string') return '';
       return text
-        .replace(/[\\/:*?"<>|.]/g, '')
-        .replace(/\s+/g, '_')
-        .replace(/^_+|_+$/g, '');
+        .replace(/[\\/:*?"<>|\0]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/^\.+|\.+$/g, '') || '';
     }
   }
 
@@ -113,7 +116,7 @@
     }
     static generate(customFilename, conversationTitle) {
       if (customFilename && customFilename.trim()) {
-        const base = customFilename.trim().replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_\-]/g, '_');
+        const base = StringUtils.sanitizeFilename(customFilename.trim().replace(/\.[^/.]+$/, ''));
         return base || `${CONFIG.DEFAULT_FILENAME}_${DateUtils.getDateString()}`;
       }
       if (conversationTitle) {
@@ -279,20 +282,35 @@
       this.dsConverter = new DeepSeekMarkdownConverter();
     }
 
-    /** 从单个 .ds-markdown 元素提取为 Markdown 文本 */
     extractBlock(dsMarkdownEl) {
       if (!dsMarkdownEl || !dsMarkdownEl.matches?.('.ds-markdown')) return '';
       return this.dsConverter.dsMarkdownToMarkdown(dsMarkdownEl).replace(/\n{3,}/g, '\n\n').trim();
     }
+
+    extractUserMessage(el) {
+      return el ? (el.textContent || '').trim() : '';
+    }
   }
 
   // ============================================================================
-  // COLLECT TURNS（仅以所有 .ds-markdown 为导出单元，按文档顺序）
+  // COLLECT TURNS：用户 .ds-message + 助手每个 .ds-markdown 各一条，按文档顺序合并（不合并助手块，保证内容不少）
   // ============================================================================
 
   function collectTurns() {
-    const nodes = document.querySelectorAll(CONFIG.SELECTORS.DS_MARKDOWN);
-    return Array.from(nodes).map(el => ({ el }));
+    const userCandidates = document.querySelectorAll(CONFIG.SELECTORS.DS_MESSAGE);
+    const userEls = Array.from(userCandidates).filter(el => !el.querySelector(CONFIG.SELECTORS.DS_MARKDOWN));
+    const assistantNodes = document.querySelectorAll(CONFIG.SELECTORS.DS_MARKDOWN);
+
+    const all = [];
+    userEls.forEach(el => all.push({ type: 'user', el }));
+    assistantNodes.forEach(el => all.push({ type: 'assistant', el }));
+    // 按 DOM 文档顺序：若 a 在 b 前面则 a 应排在数组前面（返回负数）
+    all.sort((a, b) => {
+      if (a.el === b.el) return 0;
+      const aBeforeB = (a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+      return aBeforeB ? -1 : 1;
+    });
+    return all;
   }
 
   // ============================================================================
@@ -318,11 +336,10 @@
       return cb;
     }
 
-    /** turns = [{ el: .ds-markdown }, ...]，在每个 .ds-markdown 上挂一个复选框 */
     injectCheckboxes(turns) {
-      turns.forEach(({ el }) => {
+      turns.forEach(({ type, el }) => {
         if (el && !el.querySelector(`.${CONFIG.CHECKBOX_CLASS}`)) {
-          this.createCheckbox(el, 'Include this message');
+          this.createCheckbox(el, type === 'user' ? 'Include this user message' : 'Include this DeepSeek message');
         }
       });
     }
@@ -345,14 +362,17 @@
       this.checkboxManager = checkboxManager;
       this.lastSelection = 'all';
     }
-    applySelection(value) {
+    applySelection(value, turns) {
       const checkboxes = document.querySelectorAll(`.${CONFIG.CHECKBOX_CLASS}`);
       switch (value) {
         case 'all':
           checkboxes.forEach(cb => cb.checked = true);
           break;
         case 'ai':
-          checkboxes.forEach(cb => cb.checked = true);
+          (turns || []).forEach(({ type, el }) => {
+            const cb = el?.querySelector(`.${CONFIG.CHECKBOX_CLASS}`);
+            if (cb) cb.checked = type === 'assistant';
+          });
           break;
         case 'none':
           checkboxes.forEach(cb => cb.checked = false);
@@ -486,8 +506,13 @@
         const cb = el.querySelector(`.${CONFIG.CHECKBOX_CLASS}`);
         if (!cb?.checked) continue;
 
-        const text = this.markdownConverter.extractBlock(el);
-        markdown += `## 🤖 DeepSeek (${i + 1})\n\n${text || '[No content extracted.]'}\n\n---\n\n`;
+        if (turn.type === 'user') {
+          const text = this.markdownConverter.extractUserMessage(el);
+          if (text) markdown += `## 👤 You\n\n${text}\n\n---\n\n`;
+        } else {
+          const text = this.markdownConverter.extractBlock(el);
+          markdown += `## 🤖 DeepSeek\n\n${text || '[No content extracted.]'}\n\n---\n\n`;
+        }
       }
       return markdown;
     }
@@ -497,7 +522,7 @@
         await ScrollService.loadAllMessages();
         const turns = collectTurns();
         if (!turns.length) {
-          alert('No .ds-markdown content found. Make sure you are on a DeepSeek chat page with messages.');
+          alert('No messages found. Make sure you are on a DeepSeek chat page with messages.');
           return;
         }
 
@@ -569,7 +594,7 @@
           const turns = collectTurns();
           this.checkboxManager.removeAll();
           this.checkboxManager.injectCheckboxes(turns);
-          this.selectionManager.applySelection(e.target.value);
+          this.selectionManager.applySelection(e.target.value, turns);
         });
       }
 
