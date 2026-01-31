@@ -190,11 +190,82 @@
   // DEEPSEEK MARKDOWN CONVERTER (.ds-markdown DOM → Markdown)
   // ============================================================================
 
+  /** 从 KaTeX 节点中取出原始 LaTeX（.katex-mathml 内 annotation[encoding="application/x-tex"]） */
+  function getKatexLatex(container) {
+    if (!container || typeof container.querySelector !== 'function') return '';
+    const katexEl = container.classList?.contains('katex') ? container : container.querySelector('.katex');
+    if (!katexEl) return '';
+    const ann = katexEl.querySelector('.katex-mathml annotation[encoding="application/x-tex"]');
+    return ann ? (ann.textContent || '').trim() : '';
+  }
+
+  /** 是否为块级公式（使用 $$...$$ 导出） */
+  function isKatexDisplay(container) {
+    if (!container || typeof container.querySelector !== 'function') return false;
+    const katexEl = container.classList?.contains('katex') ? container : container.querySelector('.katex');
+    return !!katexEl?.classList?.contains('katex-display');
+  }
+
+  /** 判断节点是否为 KaTeX 公式节点（或公式片段），用于合并「一行一个字母」的公式 */
+  function isKatexOrFormulaFragment(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+    const el = node;
+    if (el.classList?.contains('katex') || el.classList?.contains('katex-display')) return true;
+    if (el.classList?.contains('ds-markdown-paragraph') && el.tagName === 'P') {
+      const hasKatex = el.querySelector('.katex');
+      const textLen = (el.textContent || '').trim().length;
+      return !!hasKatex && textLen <= 30;
+    }
+    if (el.tagName === 'DIV' || el.tagName === 'SPAN') {
+      const onlyKatex = el.querySelector('.katex') && !el.querySelector(':not(.katex):not([class^="katex-"])');
+      if (onlyKatex || el.classList?.contains('katex')) return true;
+    }
+    return false;
+  }
+
   class DeepSeekMarkdownConverter {
-    /** 从 .ds-markdown 根开始转为 Markdown */
+    /** 从 .ds-markdown 根开始转为 Markdown；连续公式片段会合并为一行 */
     dsMarkdownToMarkdown(root) {
       if (!root || !root.matches?.('.ds-markdown')) return '';
-      return Array.from(root.childNodes).map(node => this._block(node)).join('');
+      const nodes = Array.from(root.childNodes);
+      const parts = [];
+      let i = 0;
+      while (i < nodes.length) {
+        const node = nodes[i];
+        if (node.nodeType === Node.ELEMENT_NODE && isKatexOrFormulaFragment(node)) {
+          let run = '';
+          while (i < nodes.length) {
+            const n = nodes[i];
+            if (n.nodeType !== Node.ELEMENT_NODE || !isKatexOrFormulaFragment(n)) break;
+            const part = this._blockInlineOnly(n);
+            const isDisplayPart = part.startsWith('$$') && part.endsWith('$$') && part.length > 4;
+            if (run) run += isDisplayPart ? '\n\n' : ' ';
+            run += part;
+            i++;
+          }
+          if (run.trim()) parts.push(run.trim() + '\n\n');
+        } else {
+          parts.push(this._block(node));
+          i++;
+        }
+      }
+      return parts.join('');
+    }
+
+    /** 仅输出内联内容，不追加段落换行（用于公式片段合并）；优先输出 LaTeX 的 $...$ / $$...$$ */
+    _blockInlineOnly(node) {
+      if (!node || node.nodeType !== Node.ELEMENT_NODE) return '';
+      const el = node;
+      /* 段落内常有「文字 + 公式 + 文字」（如：对于位置 $i$ 的token：），必须用 _inline 保留全文，不能只取第一个公式 */
+      if (el.classList?.contains('ds-markdown-paragraph') && el.tagName === 'P')
+        return this._inline(el).trim();
+      const latex = getKatexLatex(el);
+      if (latex) {
+        return isKatexDisplay(el) ? `$$${latex}$$` : `$${latex}$`;
+      }
+      if (el.classList?.contains('katex') || el.classList?.contains('katex-display'))
+        return this._inline(el);
+      return this._inline(el);
     }
 
     _inline(node) {
@@ -203,6 +274,11 @@
       if (node.nodeType !== Node.ELEMENT_NODE) return '';
 
       const el = node;
+      /* 段落内嵌的 KaTeX：优先导出 LaTeX 为 $...$ / $$...$$，便于博客等正确渲染 */
+      if (el.classList?.contains('katex') || el.classList?.contains('katex-display')) {
+        const latex = getKatexLatex(el);
+        if (latex) return isKatexDisplay(el) ? `$$${latex}$$` : `$${latex}$`;
+      }
       const tag = el.tagName.toLowerCase();
       if (tag === 'br') return '\n';
       if (tag === 'b' || tag === 'strong') return `**${Array.from(el.childNodes).map(n => this._inline(n)).join('')}**`;
@@ -266,6 +342,16 @@
         return inner.map(line => `> ${line}`).join('\n') + '\n\n';
       }
 
+      /* 块级 KaTeX：优先导出 LaTeX 为 $...$ / $$...$$，便于博客等正确渲染 */
+      if (el.classList?.contains('katex') || el.classList?.contains('katex-display')) {
+        const latex = getKatexLatex(el);
+        if (latex) return (isKatexDisplay(el) ? `$$${latex}$$` : `$${latex}$`) + '\n\n';
+        return this._inline(el).trim() + '\n\n';
+      }
+      /* 处于 KaTeX 内的节点只输出内联，避免公式被拆成「一行一个字母」 */
+      if (el.closest?.('.katex')) {
+        return this._inline(el);
+      }
       if (tag === 'div' || tag === 'section') {
         return Array.from(el.childNodes).map(n => this._block(n)).join('');
       }
