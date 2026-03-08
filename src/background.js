@@ -34,14 +34,15 @@ async function fetchImageAsBase64(url) {
   console.log('[Background] Fetching:', url);
   
   try {
-    // Fetch the image - host_permissions should allow this
+    // Fetch without credentials - Google's CORS headers use wildcard '*'
+    // which doesn't work with credentials: 'include'
     const response = await fetch(url, {
-      credentials: 'include'  // Include cookies for Google auth
+      credentials: 'omit',
+      mode: 'cors'
     });
     
     console.log('[Background] Response status:', response.status, response.statusText);
     console.log('[Background] Response type:', response.type);
-    console.log('[Background] Response headers:', [...response.headers.entries()]);
     
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
