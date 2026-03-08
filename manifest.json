@@ -6,7 +6,9 @@
   "permissions": [
     "clipboardRead",
     "storage",
-    "tabs"
+    "tabs",
+    "activeTab",
+    "<all_urls>"
   ],
   "host_permissions": [
     "https://gemini.google.com/*",
