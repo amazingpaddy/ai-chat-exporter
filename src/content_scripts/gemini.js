@@ -92,8 +92,9 @@
   class ImageUtils {
     /**
      * Convert an image element to a base64 data URL
+     * Uses background script to bypass CORS for cross-origin images
      * @param {HTMLImageElement} img - The image element to convert
-     * @returns {Promise<string>} - Base64 data URL or original URL for cross-origin images
+     * @returns {Promise<string>} - Base64 data URL
      */
     static async imageToBase64(img) {
       try {
@@ -104,24 +105,53 @@
           return src;
         }
 
-        // If image has a blob URL, fetch and convert it (this works!)
+        // If image has a blob URL, fetch and convert it directly
         if (src?.startsWith('blob:')) {
           return await this._blobUrlToBase64(src);
         }
 
-        // For HTTP URLs (Google's servers), CORS blocks canvas export
-        // Return original URL - it will work when viewing online
+        // For HTTP URLs, use background script to bypass CORS
         if (src?.startsWith('http')) {
-          console.log('[Gemini Export] Using original URL for cross-origin image');
-          return src;
+          console.log('[Gemini Export] Fetching cross-origin image via background script');
+          return await this._fetchViaBackground(src);
         }
 
         return '';
       } catch (error) {
         console.warn('[Gemini Export] Failed to convert image:', error);
-        // On error, try returning original src as fallback
+        // On error, return original URL as fallback (will work when online)
         return img.src || '';
       }
+    }
+
+    /**
+     * Fetch image via background script to bypass CORS
+     * @param {string} url - The image URL
+     * @returns {Promise<string>} - Base64 data URL
+     */
+    static async _fetchViaBackground(url) {
+      return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+          { action: 'fetchImageAsBase64', url: url },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              console.warn('[Gemini Export] Background script error:', chrome.runtime.lastError);
+              // Fallback to original URL
+              resolve(url);
+              return;
+            }
+            
+            if (response?.success && response?.data) {
+              console.log('[Gemini Export] Successfully fetched image via background');
+              resolve(response.data);
+            } else {
+              console.warn('[Gemini Export] Background fetch failed:', response?.error);
+              // Fallback to original URL
+              resolve(url);
+            }
+          }
+        );
+      });
     }
 
     /**
