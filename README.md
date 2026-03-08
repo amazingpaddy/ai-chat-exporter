@@ -40,15 +40,16 @@ Support for other LLMs like DeepSeek, Claude, and Grok will be added in future u
 ## What's New in v4.1.0
 
 ### 🖼️ Image Export Support for Gemini
-- **Embedded images**: User-uploaded and AI-generated images are now exported as base64 data URLs
-- **Self-contained exports**: No external image files needed—everything is in one Markdown file
-- **Automatic optimization**: Large images are resized (max 800px width) for reasonable file sizes
-- **Graceful fallback**: If an image can't be exported, a placeholder is used instead
+- **User-uploaded images**: Images you upload (blob URLs) are embedded as base64 data URLs
+- **AI-generated images**: Linked to original Google URLs (viewable when online)
+- **Graceful handling**: No more errors or placeholders—images just work
 
 ### Technical Details
-- Images from blob URLs, data URLs, and regular URLs are all supported
-- PNG format used by default for better quality; JPEG fallback for CORS-restricted images
-- Both Turndown-based and fallback converter updated to handle images asynchronously
+- Blob URLs (user uploads) are converted to embedded base64
+- HTTP URLs (Google's servers) are kept as-is due to CORS restrictions
+- Both Turndown-based and fallback converter handle images asynchronously
+
+**Note**: Cross-origin images from Google's servers cannot be embedded due to browser security (CORS). These images will display correctly when you're online and logged into Google.
 
 ## What's New in v4.0.0
 

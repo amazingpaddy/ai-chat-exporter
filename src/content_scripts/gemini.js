@@ -47,19 +47,6 @@
     MATH_BLOCK_SELECTOR: '.math-block[data-math]',
     MATH_INLINE_SELECTOR: '.math-inline[data-math]',
     
-    // Image-related selectors and settings
-    IMAGE_SELECTORS: {
-      // Images in model responses (AI-generated or displayed)
-      RESPONSE_IMAGE: 'img',
-      // User-uploaded images in queries
-      USER_IMAGE: 'img'
-    },
-    IMAGE_SETTINGS: {
-      MAX_WIDTH: 800,           // Max width for embedded images
-      QUALITY: 0.85,            // JPEG quality for compression
-      PLACEHOLDER_ON_ERROR: true // Use placeholder if image fails to load
-    },
-    
     DEFAULT_FILENAME: 'gemini_chat_export',
     MARKDOWN_HEADER: '# Gemini Chat Export',
     EXPORT_TIMESTAMP_FORMAT: 'Exported on:'
@@ -106,27 +93,34 @@
     /**
      * Convert an image element to a base64 data URL
      * @param {HTMLImageElement} img - The image element to convert
-     * @returns {Promise<string>} - Base64 data URL or empty string on failure
+     * @returns {Promise<string>} - Base64 data URL or original URL for cross-origin images
      */
     static async imageToBase64(img) {
       try {
+        const src = img.src;
+        
         // If image already has a data URL, return it
-        if (img.src?.startsWith('data:')) {
-          return img.src;
+        if (src?.startsWith('data:')) {
+          return src;
         }
 
-        // If image has a blob URL, fetch and convert it
-        if (img.src?.startsWith('blob:')) {
-          return await this._blobUrlToBase64(img.src);
+        // If image has a blob URL, fetch and convert it (this works!)
+        if (src?.startsWith('blob:')) {
+          return await this._blobUrlToBase64(src);
         }
 
-        // For regular URLs, use canvas to convert
-        return await this._canvasToBase64(img);
+        // For HTTP URLs (Google's servers), CORS blocks canvas export
+        // Return original URL - it will work when viewing online
+        if (src?.startsWith('http')) {
+          console.log('[Gemini Export] Using original URL for cross-origin image');
+          return src;
+        }
+
+        return '';
       } catch (error) {
-        console.warn('Failed to convert image to base64:', error);
-        return CONFIG.IMAGE_SETTINGS.PLACEHOLDER_ON_ERROR 
-          ? this._getPlaceholderDataUrl() 
-          : '';
+        console.warn('[Gemini Export] Failed to convert image:', error);
+        // On error, try returning original src as fallback
+        return img.src || '';
       }
     }
 
@@ -142,57 +136,6 @@
         reader.onerror = reject;
         reader.readAsDataURL(blob);
       });
-    }
-
-    /**
-     * Use canvas to convert image to base64 (handles CORS images)
-     */
-    static async _canvasToBase64(img) {
-      // Wait for image to load if not already
-      if (!img.complete) {
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
-        });
-      }
-
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      
-      // Calculate dimensions (respect max width)
-      let width = img.naturalWidth || img.width;
-      let height = img.naturalHeight || img.height;
-      
-      if (width > CONFIG.IMAGE_SETTINGS.MAX_WIDTH) {
-        const ratio = CONFIG.IMAGE_SETTINGS.MAX_WIDTH / width;
-        width = CONFIG.IMAGE_SETTINGS.MAX_WIDTH;
-        height = Math.round(height * ratio);
-      }
-
-      canvas.width = width;
-      canvas.height = height;
-      
-      ctx.drawImage(img, 0, 0, width, height);
-      
-      // Try PNG first (better for screenshots/diagrams), fallback to JPEG
-      try {
-        return canvas.toDataURL('image/png');
-      } catch (e) {
-        // If PNG fails (e.g., tainted canvas), try JPEG
-        return canvas.toDataURL('image/jpeg', CONFIG.IMAGE_SETTINGS.QUALITY);
-      }
-    }
-
-    /**
-     * Get a placeholder image data URL for failed conversions
-     */
-    static _getPlaceholderDataUrl() {
-      // Simple gray placeholder SVG
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" viewBox="0 0 200 150">
-        <rect fill="#f0f0f0" width="200" height="150"/>
-        <text x="100" y="75" font-family="sans-serif" font-size="14" fill="#999" text-anchor="middle" dominant-baseline="middle">Image unavailable</text>
-      </svg>`;
-      return `data:image/svg+xml;base64,${btoa(svg)}`;
     }
 
     /**
