@@ -1,6 +1,6 @@
 /**
  * AI Chat Exporter - Background Service Worker
- * Handles cross-origin image fetching to bypass CORS restrictions
+ * Handles image capture via tab screenshot
  * Version 4.1.0
  */
 
@@ -8,14 +8,14 @@
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('[Background] Received message:', request.action, request.url?.substring(0, 80));
   
-  if (request.action === 'fetchImageAsBase64') {
-    fetchImageAsBase64(request.url)
+  if (request.action === 'captureImageAsBase64') {
+    captureImageViaTab(request.url)
       .then(result => {
-        console.log('[Background] Successfully fetched image, base64 length:', result.length);
+        console.log('[Background] Successfully captured image, base64 length:', result.length);
         sendResponse({ success: true, data: result });
       })
       .catch(error => {
-        console.error('[Background] Fetch error:', error);
+        console.error('[Background] Capture error:', error);
         sendResponse({ success: false, error: error.message });
       });
     
@@ -25,58 +25,107 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 /**
- * Fetch an image URL and convert it to base64 data URL
- * Background scripts can bypass CORS restrictions
- * @param {string} url - The image URL to fetch
- * @returns {Promise<string>} - Base64 data URL
+ * Capture an image by opening it in a background tab and taking a screenshot
+ * This bypasses CORS because we're capturing the visible tab, not fetching cross-origin
+ * @param {string} url - The image URL to capture
+ * @returns {Promise<string>} - Base64 data URL (PNG format from captureVisibleTab)
  */
-async function fetchImageAsBase64(url) {
-  console.log('[Background] Fetching:', url);
+async function captureImageViaTab(url) {
+  console.log('[Background] Capturing image via tab:', url);
+  
+  let tabId = null;
   
   try {
-    // Fetch without credentials - Google's CORS headers use wildcard '*'
-    // which doesn't work with credentials: 'include'
-    const response = await fetch(url, {
-      credentials: 'omit',
-      mode: 'cors'
+    // Create a background tab with the image URL
+    const tab = await chrome.tabs.create({
+      url: url,
+      active: false  // Keep it in background
     });
+    tabId = tab.id;
+    console.log('[Background] Created tab:', tabId);
     
-    console.log('[Background] Response status:', response.status, response.statusText);
-    console.log('[Background] Response type:', response.type);
+    // Wait for the tab to finish loading
+    await waitForTabLoad(tabId);
+    console.log('[Background] Tab loaded');
     
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    // Small delay to ensure image is rendered
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Get the tab's window ID for captureVisibleTab
+    const tabInfo = await chrome.tabs.get(tabId);
+    
+    // We need to make the tab active briefly to capture it
+    // Store the current active tab so we can restore it
+    const [currentTab] = await chrome.tabs.query({ active: true, windowId: tabInfo.windowId });
+    
+    // Activate the image tab
+    await chrome.tabs.update(tabId, { active: true });
+    
+    // Small delay after activation
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Capture the visible tab
+    const dataUrl = await chrome.tabs.captureVisibleTab(tabInfo.windowId, {
+      format: 'png'
+    });
+    console.log('[Background] Captured screenshot, length:', dataUrl.length);
+    
+    // Restore the original active tab
+    if (currentTab) {
+      await chrome.tabs.update(currentTab.id, { active: true });
     }
     
-    const blob = await response.blob();
-    console.log('[Background] Got blob:', blob.type, blob.size, 'bytes');
+    // Close the image tab
+    await chrome.tabs.remove(tabId);
+    console.log('[Background] Closed image tab');
     
-    // Verify it's an image (or allow empty type for opaque responses)
-    if (blob.type && !blob.type.startsWith('image/')) {
-      throw new Error(`Not an image: ${blob.type}`);
-    }
-    
-    // Convert blob to base64 data URL
-    const base64 = await blobToBase64(blob);
-    console.log('[Background] Converted to base64, length:', base64.length);
-    return base64;
+    return dataUrl;
   } catch (error) {
-    console.error('[Background] Failed to fetch image:', url, error);
+    console.error('[Background] Tab capture failed:', error);
+    
+    // Clean up: close the tab if it was created
+    if (tabId) {
+      try {
+        await chrome.tabs.remove(tabId);
+      } catch (e) {
+        // Tab may already be closed
+      }
+    }
+    
     throw error;
   }
 }
 
 /**
- * Convert a Blob to a base64 data URL
- * @param {Blob} blob - The blob to convert
- * @returns {Promise<string>} - Base64 data URL
+ * Wait for a tab to finish loading
+ * @param {number} tabId - The tab ID to wait for
+ * @returns {Promise<void>}
  */
-function blobToBase64(blob) {
+function waitForTabLoad(tabId) {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error('FileReader error'));
-    reader.readAsDataURL(blob);
+    const timeout = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      reject(new Error('Tab load timeout'));
+    }, 10000); // 10 second timeout
+    
+    function listener(updatedTabId, changeInfo) {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') {
+        clearTimeout(timeout);
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    }
+    
+    chrome.tabs.onUpdated.addListener(listener);
+    
+    // Check if already loaded
+    chrome.tabs.get(tabId).then(tab => {
+      if (tab.status === 'complete') {
+        clearTimeout(timeout);
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    }).catch(reject);
   });
 }
 

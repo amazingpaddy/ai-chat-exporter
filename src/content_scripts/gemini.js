@@ -92,7 +92,6 @@
   class ImageUtils {
     /**
      * Convert an image element to a base64 data URL
-     * Uses background script to bypass CORS for cross-origin images
      * @param {HTMLImageElement} img - The image element to convert
      * @returns {Promise<string>} - Base64 data URL or original URL as fallback
      */
@@ -110,81 +109,54 @@
           return await this._blobUrlToBase64(src);
         }
 
-        // For HTTP URLs, use background script to bypass CORS
+        // For HTTP URLs, request capture via background script
         if (src?.startsWith('http')) {
-          console.log('[Gemini Export] Fetching cross-origin image via background script');
-          const result = await this._fetchViaBackground(src);
-          // If background fetch failed, fall back to original URL
-          return result || src;
+          console.log('[Gemini Export] Requesting background capture for:', src.substring(0, 80));
+          const result = await this._captureViaBackground(src);
+          if (result) {
+            console.log('[Gemini Export] Successfully captured image via background');
+            return result;
+          }
+          
+          // Fallback to original URL
+          console.log('[Gemini Export] Falling back to original URL');
+          return src;
         }
 
-        return '';
+        return src || '';
       } catch (error) {
         console.warn('[Gemini Export] Failed to convert image:', error);
-        // On error, return original URL as fallback (will work when online)
         return img.src || '';
       }
     }
 
     /**
-     * Fetch image via background script to bypass CORS
-     * @param {string} url - The image URL
-     * @returns {Promise<string>} - Base64 data URL or null on failure
+     * Request image capture via background script (tab screenshot approach)
+     * @param {string} url - The image URL to capture
+     * @returns {Promise<string|null>} - Base64 data URL or null on failure
      */
-    static async _fetchViaBackground(url) {
+    static async _captureViaBackground(url) {
       return new Promise((resolve) => {
-        // Check if runtime is available
-        if (!chrome?.runtime?.sendMessage) {
-          console.warn('[Gemini Export] chrome.runtime.sendMessage not available');
-          resolve(null);
-          return;
-        }
-        
-        console.log('[Gemini Export] Sending message to background script for:', url.substring(0, 80));
-        
-        let resolved = false;
-        
-        try {
-          chrome.runtime.sendMessage(
-            { action: 'fetchImageAsBase64', url: url },
-            (response) => {
-              if (resolved) return;
-              resolved = true;
-              
-              // Check for runtime errors
-              if (chrome.runtime.lastError) {
-                console.warn('[Gemini Export] Runtime error:', chrome.runtime.lastError.message);
-                resolve(null);
-                return;
-              }
-              
-              console.log('[Gemini Export] Got response from background:', 
-                response ? { success: response.success, dataLength: response.data?.length, error: response.error } : 'null');
-              
-              if (response?.success && response?.data) {
-                resolve(response.data);
-              } else {
-                console.warn('[Gemini Export] Background fetch failed:', response?.error);
-                resolve(null);
-              }
+        chrome.runtime.sendMessage(
+          { action: 'captureImageAsBase64', url: url },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              console.warn('[Gemini Export] Background message error:', chrome.runtime.lastError);
+              resolve(null);
+              return;
             }
-          );
-        } catch (error) {
-          console.warn('[Gemini Export] Failed to send message:', error);
-          if (!resolved) {
-            resolved = true;
-            resolve(null);
+            
+            if (response?.success && response?.data) {
+              resolve(response.data);
+            } else {
+              console.warn('[Gemini Export] Background capture failed:', response?.error);
+              resolve(null);
+            }
           }
-        }
+        );
         
-        // Timeout after 10 seconds
-        setTimeout(() => {
-          if (!resolved) {
-            console.warn('[Gemini Export] Background fetch timed out');
-            resolved = true;
-            resolve(null);
-          }
-        }, 10000);
+        // Timeout after 15 seconds (tab capture is slower)
+        setTimeout(() => resolve(null), 15000);
       });
     }
 
