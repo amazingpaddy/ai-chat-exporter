@@ -8,6 +8,7 @@
     "storage",
     "tabs",
     "activeTab",
+    "offscreen",
     "<all_urls>"
   ],
   "host_permissions": [

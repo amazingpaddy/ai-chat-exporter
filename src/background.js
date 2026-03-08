@@ -1,89 +1,151 @@
 /**
  * AI Chat Exporter - Background Service Worker
- * Handles image capture via tab screenshot
+ * Handles image capture via offscreen document and getDisplayMedia
  * Version 4.1.0
  */
 
-// Listen for messages from content scripts
+let captureSessionActive = false;
+let offscreenDocumentCreated = false;
+
+console.log('[AI Chat Exporter] Background service worker loaded');
+
+// Listen for messages from content scripts and offscreen document
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('[Background] Received message:', request.action, request.url?.substring(0, 80));
+  console.log('[Background] Received message:', request.action, request.url?.substring(0, 80) || '');
   
-  if (request.action === 'captureImageAsBase64') {
-    captureImageViaTab(request.url)
-      .then(result => {
-        console.log('[Background] Successfully captured image, base64 length:', result.length);
-        sendResponse({ success: true, data: result });
-      })
-      .catch(error => {
-        console.error('[Background] Capture error:', error);
-        sendResponse({ success: false, error: error.message });
-      });
-    
-    // Return true to indicate we'll send response asynchronously
-    return true;
+  switch (request.action) {
+    case 'startCaptureSession':
+      startCaptureSession()
+        .then(() => sendResponse({ success: true }))
+        .catch(error => sendResponse({ success: false, error: error.message }));
+      return true;
+      
+    case 'captureImageAsBase64':
+      captureImageViaDisplayMedia(request.url)
+        .then(result => {
+          console.log('[Background] Successfully captured image, base64 length:', result.length);
+          sendResponse({ success: true, data: result });
+        })
+        .catch(error => {
+          console.error('[Background] Capture error:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+      return true;
+      
+    case 'stopCaptureSession':
+      stopCaptureSession()
+        .then(() => sendResponse({ success: true }))
+        .catch(error => sendResponse({ success: false, error: error.message }));
+      return true;
+      
+    case 'captureEnded':
+      // Offscreen document notified us that user stopped sharing
+      console.log('[Background] Capture ended by user');
+      captureSessionActive = false;
+      return false;
+      
+    default:
+      return false;
   }
 });
 
 /**
- * Capture an image by opening it in a background tab and taking a screenshot
- * This bypasses CORS because we're capturing the visible tab, not fetching cross-origin
- * @param {string} url - The image URL to capture
- * @returns {Promise<string>} - Base64 data URL (PNG format from captureVisibleTab)
+ * Start a capture session by creating offscreen document and initializing capture
  */
-async function captureImageViaTab(url) {
-  console.log('[Background] Capturing image via tab:', url);
+async function startCaptureSession() {
+  console.log('[Background] Starting capture session...');
+  
+  // Create offscreen document if not already created
+  if (!offscreenDocumentCreated) {
+    await createOffscreenDocument();
+  }
+  
+  // Initialize capture in offscreen document
+  const response = await chrome.runtime.sendMessage({ action: 'initCapture' });
+  
+  if (!response.success) {
+    throw new Error(response.error || 'Failed to initialize capture');
+  }
+  
+  captureSessionActive = true;
+  console.log('[Background] Capture session started');
+}
+
+/**
+ * Create the offscreen document for display media capture
+ */
+async function createOffscreenDocument() {
+  console.log('[Background] Creating offscreen document...');
+  
+  // Check if already exists
+  const existingContexts = await chrome.runtime.getContexts({
+    contextTypes: ['OFFSCREEN_DOCUMENT']
+  });
+  
+  if (existingContexts.length > 0) {
+    console.log('[Background] Offscreen document already exists');
+    offscreenDocumentCreated = true;
+    return;
+  }
+  
+  // Create new offscreen document
+  await chrome.offscreen.createDocument({
+    url: 'src/offscreen.html',
+    reasons: ['DISPLAY_MEDIA'],
+    justification: 'Capture screen to embed images in chat export'
+  });
+  
+  offscreenDocumentCreated = true;
+  console.log('[Background] Offscreen document created');
+}
+
+/**
+ * Capture an image by opening it in a tab and capturing the screen
+ * @param {string} url - The image URL to capture
+ * @returns {Promise<string>} - Base64 data URL
+ */
+async function captureImageViaDisplayMedia(url) {
+  console.log('[Background] Capturing image via display media:', url);
+  
+  if (!captureSessionActive) {
+    throw new Error('Capture session not active');
+  }
   
   let tabId = null;
   
   try {
-    // Create a background tab with the image URL
+    // Create a new tab with the image URL
     const tab = await chrome.tabs.create({
       url: url,
-      active: false  // Keep it in background
+      active: true  // Make it active so it's visible on screen
     });
     tabId = tab.id;
-    console.log('[Background] Created tab:', tabId);
+    console.log('[Background] Created image tab:', tabId);
     
-    // Wait for the tab to finish loading
+    // Wait for tab to load
     await waitForTabLoad(tabId);
     console.log('[Background] Tab loaded');
     
-    // Small delay to ensure image is rendered
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Additional delay to ensure image is fully rendered
+    await new Promise(resolve => setTimeout(resolve, 800));
     
-    // Get the tab's window ID for captureVisibleTab
-    const tabInfo = await chrome.tabs.get(tabId);
+    // Capture frame from offscreen document
+    const response = await chrome.runtime.sendMessage({ action: 'captureFrame' });
     
-    // We need to make the tab active briefly to capture it
-    // Store the current active tab so we can restore it
-    const [currentTab] = await chrome.tabs.query({ active: true, windowId: tabInfo.windowId });
-    
-    // Activate the image tab
-    await chrome.tabs.update(tabId, { active: true });
-    
-    // Small delay after activation
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    // Capture the visible tab
-    const dataUrl = await chrome.tabs.captureVisibleTab(tabInfo.windowId, {
-      format: 'png'
-    });
-    console.log('[Background] Captured screenshot, length:', dataUrl.length);
-    
-    // Restore the original active tab
-    if (currentTab) {
-      await chrome.tabs.update(currentTab.id, { active: true });
+    if (!response.success) {
+      throw new Error(response.error || 'Failed to capture frame');
     }
     
     // Close the image tab
     await chrome.tabs.remove(tabId);
+    tabId = null;
     console.log('[Background] Closed image tab');
     
-    return dataUrl;
+    return response.data;
   } catch (error) {
-    console.error('[Background] Tab capture failed:', error);
+    console.error('[Background] Display media capture failed:', error);
     
-    // Clean up: close the tab if it was created
+    // Clean up tab if created
     if (tabId) {
       try {
         await chrome.tabs.remove(tabId);
@@ -97,6 +159,29 @@ async function captureImageViaTab(url) {
 }
 
 /**
+ * Stop the capture session and clean up
+ */
+async function stopCaptureSession() {
+  console.log('[Background] Stopping capture session...');
+  
+  if (offscreenDocumentCreated) {
+    try {
+      // Tell offscreen document to stop capture
+      await chrome.runtime.sendMessage({ action: 'stopCapture' });
+      
+      // Close offscreen document
+      await chrome.offscreen.closeDocument();
+      offscreenDocumentCreated = false;
+    } catch (e) {
+      console.warn('[Background] Error closing offscreen document:', e);
+    }
+  }
+  
+  captureSessionActive = false;
+  console.log('[Background] Capture session stopped');
+}
+
+/**
  * Wait for a tab to finish loading
  * @param {number} tabId - The tab ID to wait for
  * @returns {Promise<void>}
@@ -106,7 +191,7 @@ function waitForTabLoad(tabId) {
     const timeout = setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(listener);
       reject(new Error('Tab load timeout'));
-    }, 10000); // 10 second timeout
+    }, 10000);
     
     function listener(updatedTabId, changeInfo) {
       if (updatedTabId === tabId && changeInfo.status === 'complete') {

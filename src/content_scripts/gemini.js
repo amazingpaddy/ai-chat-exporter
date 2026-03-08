@@ -1042,7 +1042,19 @@ ${code}\n\
     }
 
     async execute(exportMode, customFilename) {
+      let captureSessionStarted = false;
+      
       try {
+        // Start capture session for image embedding
+        console.log('[Gemini Export] Starting capture session...');
+        const startResult = await this._startCaptureSession();
+        captureSessionStarted = startResult;
+        if (startResult) {
+          console.log('[Gemini Export] Capture session started - images will be embedded');
+        } else {
+          console.log('[Gemini Export] Capture session not started - images will use URLs');
+        }
+        
         // Load all messages
         await ScrollService.loadAllMessages();
 
@@ -1071,7 +1083,44 @@ ${code}\n\
       } catch (error) {
         console.error('Export error:', error);
         alert(`Export failed: ${error.message}`);
+      } finally {
+        // Always stop capture session
+        if (captureSessionStarted) {
+          console.log('[Gemini Export] Stopping capture session...');
+          await this._stopCaptureSession();
+        }
       }
+    }
+    
+    /**
+     * Start the capture session via background script
+     * @returns {Promise<boolean>} - true if session started successfully
+     */
+    async _startCaptureSession() {
+      return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: 'startCaptureSession' }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.warn('[Gemini Export] Failed to start capture session:', chrome.runtime.lastError);
+            resolve(false);
+            return;
+          }
+          resolve(response?.success || false);
+        });
+      });
+    }
+    
+    /**
+     * Stop the capture session via background script
+     */
+    async _stopCaptureSession() {
+      return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: 'stopCaptureSession' }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.warn('[Gemini Export] Failed to stop capture session:', chrome.runtime.lastError);
+          }
+          resolve();
+        });
+      });
     }
   }
 
