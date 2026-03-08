@@ -6,10 +6,18 @@
 
 // Listen for messages from content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log('[Background] Received message:', request.action, request.url?.substring(0, 80));
+  
   if (request.action === 'fetchImageAsBase64') {
     fetchImageAsBase64(request.url)
-      .then(result => sendResponse({ success: true, data: result }))
-      .catch(error => sendResponse({ success: false, error: error.message }));
+      .then(result => {
+        console.log('[Background] Successfully fetched image, base64 length:', result.length);
+        sendResponse({ success: true, data: result });
+      })
+      .catch(error => {
+        console.error('[Background] Fetch error:', error);
+        sendResponse({ success: false, error: error.message });
+      });
     
     // Return true to indicate we'll send response asynchronously
     return true;
@@ -23,25 +31,34 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
  * @returns {Promise<string>} - Base64 data URL
  */
 async function fetchImageAsBase64(url) {
+  console.log('[Background] Fetching:', url);
+  
   try {
+    // Fetch the image - host_permissions should allow this
     const response = await fetch(url, {
-      mode: 'cors',
-      credentials: 'include'
+      credentials: 'include'  // Include cookies for Google auth
     });
+    
+    console.log('[Background] Response status:', response.status, response.statusText);
+    console.log('[Background] Response type:', response.type);
+    console.log('[Background] Response headers:', [...response.headers.entries()]);
     
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     
     const blob = await response.blob();
+    console.log('[Background] Got blob:', blob.type, blob.size, 'bytes');
     
-    // Verify it's an image
-    if (!blob.type.startsWith('image/')) {
+    // Verify it's an image (or allow empty type for opaque responses)
+    if (blob.type && !blob.type.startsWith('image/')) {
       throw new Error(`Not an image: ${blob.type}`);
     }
     
     // Convert blob to base64 data URL
-    return await blobToBase64(blob);
+    const base64 = await blobToBase64(blob);
+    console.log('[Background] Converted to base64, length:', base64.length);
+    return base64;
   } catch (error) {
     console.error('[Background] Failed to fetch image:', url, error);
     throw error;

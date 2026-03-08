@@ -94,7 +94,7 @@
      * Convert an image element to a base64 data URL
      * Uses background script to bypass CORS for cross-origin images
      * @param {HTMLImageElement} img - The image element to convert
-     * @returns {Promise<string>} - Base64 data URL
+     * @returns {Promise<string>} - Base64 data URL or original URL as fallback
      */
     static async imageToBase64(img) {
       try {
@@ -113,7 +113,9 @@
         // For HTTP URLs, use background script to bypass CORS
         if (src?.startsWith('http')) {
           console.log('[Gemini Export] Fetching cross-origin image via background script');
-          return await this._fetchViaBackground(src);
+          const result = await this._fetchViaBackground(src);
+          // If background fetch failed, fall back to original URL
+          return result || src;
         }
 
         return '';
@@ -127,30 +129,62 @@
     /**
      * Fetch image via background script to bypass CORS
      * @param {string} url - The image URL
-     * @returns {Promise<string>} - Base64 data URL
+     * @returns {Promise<string>} - Base64 data URL or null on failure
      */
     static async _fetchViaBackground(url) {
-      return new Promise((resolve, reject) => {
-        chrome.runtime.sendMessage(
-          { action: 'fetchImageAsBase64', url: url },
-          (response) => {
-            if (chrome.runtime.lastError) {
-              console.warn('[Gemini Export] Background script error:', chrome.runtime.lastError);
-              // Fallback to original URL
-              resolve(url);
-              return;
+      return new Promise((resolve) => {
+        // Check if runtime is available
+        if (!chrome?.runtime?.sendMessage) {
+          console.warn('[Gemini Export] chrome.runtime.sendMessage not available');
+          resolve(null);
+          return;
+        }
+        
+        console.log('[Gemini Export] Sending message to background script for:', url.substring(0, 80));
+        
+        let resolved = false;
+        
+        try {
+          chrome.runtime.sendMessage(
+            { action: 'fetchImageAsBase64', url: url },
+            (response) => {
+              if (resolved) return;
+              resolved = true;
+              
+              // Check for runtime errors
+              if (chrome.runtime.lastError) {
+                console.warn('[Gemini Export] Runtime error:', chrome.runtime.lastError.message);
+                resolve(null);
+                return;
+              }
+              
+              console.log('[Gemini Export] Got response from background:', 
+                response ? { success: response.success, dataLength: response.data?.length, error: response.error } : 'null');
+              
+              if (response?.success && response?.data) {
+                resolve(response.data);
+              } else {
+                console.warn('[Gemini Export] Background fetch failed:', response?.error);
+                resolve(null);
+              }
             }
-            
-            if (response?.success && response?.data) {
-              console.log('[Gemini Export] Successfully fetched image via background');
-              resolve(response.data);
-            } else {
-              console.warn('[Gemini Export] Background fetch failed:', response?.error);
-              // Fallback to original URL
-              resolve(url);
-            }
+          );
+        } catch (error) {
+          console.warn('[Gemini Export] Failed to send message:', error);
+          if (!resolved) {
+            resolved = true;
+            resolve(null);
           }
-        );
+        }
+        
+        // Timeout after 10 seconds
+        setTimeout(() => {
+          if (!resolved) {
+            console.warn('[Gemini Export] Background fetch timed out');
+            resolved = true;
+            resolve(null);
+          }
+        }, 10000);
       });
     }
 
