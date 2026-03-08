@@ -1,20 +1,29 @@
 {
   "manifest_version": 3,
   "name": "AI Chat Exporter",
-  "description": "Export Gemini and ChatGPT chats to Markdown with perfect LaTeX math, code, and formatting.",
-  "version": "4.0.1",
+  "description": "Export Gemini and ChatGPT chats to Markdown with perfect LaTeX math, code, images, and formatting.",
+  "version": "4.1.0",
   "permissions": [
     "clipboardRead",
-    "storage"
+    "storage",
+    "tabs",
+    "activeTab",
+    "offscreen",
+    "<all_urls>"
   ],
   "host_permissions": [
-  "https://gemini.google.com/*",
-  "https://chatgpt.com/*"
+    "https://gemini.google.com/*",
+    "https://chatgpt.com/*",
+    "https://lh3.googleusercontent.com/*",
+    "https://*.googleusercontent.com/*"
   ],
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "src/background.js"
   },
   "content_scripts": [
     {

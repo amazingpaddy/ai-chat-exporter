@@ -1,10 +1,11 @@
 # AI Chat Exporter
 
-Export your Gemini and ChatGPT conversations to perfectly formatted Markdown files with complete preservation of LaTeX math, code blocks, tables, and all formatting. Version 4.0.0 introduces DOM-based extraction for Gemini—eliminating clipboard dependencies for more reliable, privacy-friendly exports.
+Export your Gemini and ChatGPT conversations to perfectly formatted Markdown files with complete preservation of LaTeX math, code blocks, tables, images, and all formatting. Version 4.1.0 introduces embedded image support for Gemini exports—your images are now included as base64 data URLs for fully self-contained exports.
 
 ## Features
 
 - **DOM-based extraction for Gemini (v4.0.0+)**: Direct HTML parsing without clipboard dependency using Turndown library
+- **Image export (v4.1.0+)**: User-uploaded and AI-generated images are embedded as base64 data URLs
 - Export your full Gemini or ChatGPT chat conversation to Markdown, preserving formatting (code, tables, LaTeX, etc.)
 - Dedicated "Export Chat" button appears automatically on every Gemini and ChatGPT chat page
 - Option to hide the export button via the extension popup
@@ -35,6 +36,20 @@ Export your Gemini and ChatGPT conversations to perfectly formatted Markdown fil
    - The "Export Chat" button will now appear on every Gemini and ChatGPT chat page
 
 Support for other LLMs like DeepSeek, Claude, and Grok will be added in future updates.
+
+## What's New in v4.1.0
+
+### 🖼️ Image Export Support for Gemini
+- **Fully embedded images**: Both user-uploaded and AI-generated images are embedded as base64
+- **Self-contained exports**: Markdown files work offline—no external dependencies
+- **Background script fetching**: Bypasses CORS restrictions for Google-hosted images
+- **Graceful fallback**: If embedding fails, original URL is preserved
+
+### Technical Details
+- Blob URLs (user uploads) are converted directly to base64
+- HTTP URLs (Google's servers) are fetched via background service worker to bypass CORS
+- Both Turndown-based and fallback converter handle images asynchronously
+- New `host_permissions` added for `*.googleusercontent.com`
 
 ## What's New in v4.0.0
 
@@ -84,11 +99,11 @@ Support for other LLMs like DeepSeek, Claude, and Grok will be added in future u
 - ✅ Horizontal rules
 - ✅ Math formulas (LaTeX from `data-math` attributes)
 - ✅ Line breaks
+- ✅ **Images** (embedded as base64 data URLs)
 
 **Not supported:**
 - ❌ Canvas/drawing responses
-- ❌ Embedded images
-- ❌ File attachments
+- ❌ File attachments (non-image)
 
 **Note:** All content is extracted directly from the DOM using the Turndown library, ensuring accurate formatting preservation without clipboard dependencies.
 
