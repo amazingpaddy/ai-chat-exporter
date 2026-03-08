@@ -1,10 +1,11 @@
 # AI Chat Exporter
 
-Export your Gemini and ChatGPT conversations to perfectly formatted Markdown files with complete preservation of LaTeX math, code blocks, tables, and all formatting. Version 4.0.0 introduces DOM-based extraction for Gemini—eliminating clipboard dependencies for more reliable, privacy-friendly exports.
+Export your Gemini and ChatGPT conversations to perfectly formatted Markdown files with complete preservation of LaTeX math, code blocks, tables, images, and all formatting. Version 4.1.0 introduces embedded image support for Gemini exports—your images are now included as base64 data URLs for fully self-contained exports.
 
 ## Features
 
 - **DOM-based extraction for Gemini (v4.0.0+)**: Direct HTML parsing without clipboard dependency using Turndown library
+- **Image export (v4.1.0+)**: User-uploaded and AI-generated images are embedded as base64 data URLs
 - Export your full Gemini or ChatGPT chat conversation to Markdown, preserving formatting (code, tables, LaTeX, etc.)
 - Dedicated "Export Chat" button appears automatically on every Gemini and ChatGPT chat page
 - Option to hide the export button via the extension popup
@@ -35,6 +36,19 @@ Export your Gemini and ChatGPT conversations to perfectly formatted Markdown fil
    - The "Export Chat" button will now appear on every Gemini and ChatGPT chat page
 
 Support for other LLMs like DeepSeek, Claude, and Grok will be added in future updates.
+
+## What's New in v4.1.0
+
+### 🖼️ Image Export Support for Gemini
+- **Embedded images**: User-uploaded and AI-generated images are now exported as base64 data URLs
+- **Self-contained exports**: No external image files needed—everything is in one Markdown file
+- **Automatic optimization**: Large images are resized (max 800px width) for reasonable file sizes
+- **Graceful fallback**: If an image can't be exported, a placeholder is used instead
+
+### Technical Details
+- Images from blob URLs, data URLs, and regular URLs are all supported
+- PNG format used by default for better quality; JPEG fallback for CORS-restricted images
+- Both Turndown-based and fallback converter updated to handle images asynchronously
 
 ## What's New in v4.0.0
 
@@ -84,11 +98,11 @@ Support for other LLMs like DeepSeek, Claude, and Grok will be added in future u
 - ✅ Horizontal rules
 - ✅ Math formulas (LaTeX from `data-math` attributes)
 - ✅ Line breaks
+- ✅ **Images** (embedded as base64 data URLs)
 
 **Not supported:**
 - ❌ Canvas/drawing responses
-- ❌ Embedded images
-- ❌ File attachments
+- ❌ File attachments (non-image)
 
 **Note:** All content is extracted directly from the DOM using the Turndown library, ensuring accurate formatting preservation without clipboard dependencies.
 

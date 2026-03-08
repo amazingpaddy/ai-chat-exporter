@@ -1,7 +1,7 @@
 /**
  * Gemini Chat Exporter - Gemini content script
- * Exports Gemini chat conversations to Markdown with LaTeX preservation
- * Version 4.0.0 - DOM-based extraction (no clipboard dependency)
+ * Exports Gemini chat conversations to Markdown with LaTeX and image preservation
+ * Version 4.1.0 - DOM-based extraction with embedded image support
  */
 
 (function() {
@@ -47,6 +47,19 @@
     MATH_BLOCK_SELECTOR: '.math-block[data-math]',
     MATH_INLINE_SELECTOR: '.math-inline[data-math]',
     
+    // Image-related selectors and settings
+    IMAGE_SELECTORS: {
+      // Images in model responses (AI-generated or displayed)
+      RESPONSE_IMAGE: 'img',
+      // User-uploaded images in queries
+      USER_IMAGE: 'img'
+    },
+    IMAGE_SETTINGS: {
+      MAX_WIDTH: 800,           // Max width for embedded images
+      QUALITY: 0.85,            // JPEG quality for compression
+      PLACEHOLDER_ON_ERROR: true // Use placeholder if image fails to load
+    },
+    
     DEFAULT_FILENAME: 'gemini_chat_export',
     MARKDOWN_HEADER: '# Gemini Chat Export',
     EXPORT_TIMESTAMP_FORMAT: 'Exported on:'
@@ -82,6 +95,111 @@
         .replace(/\[cite:[\d,\s]+\]/g, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
+    }
+  }
+
+  // ============================================================================
+  // IMAGE UTILITIES
+  // ============================================================================
+  
+  class ImageUtils {
+    /**
+     * Convert an image element to a base64 data URL
+     * @param {HTMLImageElement} img - The image element to convert
+     * @returns {Promise<string>} - Base64 data URL or empty string on failure
+     */
+    static async imageToBase64(img) {
+      try {
+        // If image already has a data URL, return it
+        if (img.src?.startsWith('data:')) {
+          return img.src;
+        }
+
+        // If image has a blob URL, fetch and convert it
+        if (img.src?.startsWith('blob:')) {
+          return await this._blobUrlToBase64(img.src);
+        }
+
+        // For regular URLs, use canvas to convert
+        return await this._canvasToBase64(img);
+      } catch (error) {
+        console.warn('Failed to convert image to base64:', error);
+        return CONFIG.IMAGE_SETTINGS.PLACEHOLDER_ON_ERROR 
+          ? this._getPlaceholderDataUrl() 
+          : '';
+      }
+    }
+
+    /**
+     * Convert a blob URL to base64
+     */
+    static async _blobUrlToBase64(blobUrl) {
+      const response = await fetch(blobUrl);
+      const blob = await response.blob();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    /**
+     * Use canvas to convert image to base64 (handles CORS images)
+     */
+    static async _canvasToBase64(img) {
+      // Wait for image to load if not already
+      if (!img.complete) {
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+        });
+      }
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      // Calculate dimensions (respect max width)
+      let width = img.naturalWidth || img.width;
+      let height = img.naturalHeight || img.height;
+      
+      if (width > CONFIG.IMAGE_SETTINGS.MAX_WIDTH) {
+        const ratio = CONFIG.IMAGE_SETTINGS.MAX_WIDTH / width;
+        width = CONFIG.IMAGE_SETTINGS.MAX_WIDTH;
+        height = Math.round(height * ratio);
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      // Try PNG first (better for screenshots/diagrams), fallback to JPEG
+      try {
+        return canvas.toDataURL('image/png');
+      } catch (e) {
+        // If PNG fails (e.g., tainted canvas), try JPEG
+        return canvas.toDataURL('image/jpeg', CONFIG.IMAGE_SETTINGS.QUALITY);
+      }
+    }
+
+    /**
+     * Get a placeholder image data URL for failed conversions
+     */
+    static _getPlaceholderDataUrl() {
+      // Simple gray placeholder SVG
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" viewBox="0 0 200 150">
+        <rect fill="#f0f0f0" width="200" height="150"/>
+        <text x="100" y="75" font-family="sans-serif" font-size="14" fill="#999" text-anchor="middle" dominant-baseline="middle">Image unavailable</text>
+      </svg>`;
+      return `data:image/svg+xml;base64,${btoa(svg)}`;
+    }
+
+    /**
+     * Extract alt text from image element
+     */
+    static getAltText(img) {
+      return img.alt || img.title || 'Image';
     }
   }
 
@@ -291,25 +409,97 @@
         replacement: () => '  \n'
       });
 
+      // Image rule - uses placeholder that gets replaced async later
+      service.addRule('image', {
+        filter: 'img',
+        replacement: (content, node) => {
+          // Mark images with a placeholder that will be replaced async
+          const imgId = `__IMG_PLACEHOLDER_${Date.now()}_${Math.random().toString(36).substr(2, 9)}__`;
+          // Store the image element reference for later async processing
+          if (!this._pendingImages) this._pendingImages = new Map();
+          this._pendingImages.set(imgId, node);
+          
+          const alt = ImageUtils.getAltText(node);
+          return `![${alt}](${imgId})`;
+        }
+      });
+
       return service;
     }
 
-    extractUserQuery(userQueryElement) {
-      if (!userQueryElement) return '';
-      
-      const queryLines = userQueryElement.querySelectorAll(CONFIG.SELECTORS.USER_QUERY_TEXT);
-      if (queryLines.length === 0) {
-        const queryText = userQueryElement.querySelector('.query-text, .user-query-container');
-        return queryText ? queryText.textContent.trim() : '';
+    /**
+     * Process pending images and replace placeholders with base64 data URLs
+     * @param {string} markdown - Markdown with image placeholders
+     * @returns {Promise<string>} - Markdown with embedded base64 images
+     */
+    async _processImagePlaceholders(markdown) {
+      if (!this._pendingImages || this._pendingImages.size === 0) {
+        return markdown;
       }
+
+      let result = markdown;
       
-      return Array.from(queryLines)
-        .map(line => line.textContent.trim())
-        .filter(text => text.length > 0)
-        .join('\n');
+      for (const [placeholder, imgElement] of this._pendingImages.entries()) {
+        try {
+          const base64Url = await ImageUtils.imageToBase64(imgElement);
+          if (base64Url) {
+            result = result.replace(placeholder, base64Url);
+          } else {
+            // Remove the image reference if conversion failed
+            result = result.replace(`![${ImageUtils.getAltText(imgElement)}](${placeholder})`, 
+              `[Image: ${ImageUtils.getAltText(imgElement)} - could not be exported]`);
+          }
+        } catch (error) {
+          console.warn('Failed to process image:', error);
+          result = result.replace(placeholder, ImageUtils._getPlaceholderDataUrl());
+        }
+      }
+
+      // Clear pending images
+      this._pendingImages.clear();
+      
+      return result;
     }
 
-    extractModelResponse(modelResponseElement) {
+    async extractUserQuery(userQueryElement) {
+      if (!userQueryElement) return '';
+      
+      // Check for images in user query (uploaded images)
+      const images = userQueryElement.querySelectorAll('img');
+      let imageMarkdown = '';
+      
+      if (images.length > 0) {
+        for (const img of images) {
+          try {
+            const base64Url = await ImageUtils.imageToBase64(img);
+            const alt = ImageUtils.getAltText(img);
+            if (base64Url) {
+              imageMarkdown += `![${alt}](${base64Url})\n\n`;
+            }
+          } catch (error) {
+            console.warn('Failed to extract user image:', error);
+          }
+        }
+      }
+      
+      const queryLines = userQueryElement.querySelectorAll(CONFIG.SELECTORS.USER_QUERY_TEXT);
+      let textContent = '';
+      
+      if (queryLines.length === 0) {
+        const queryText = userQueryElement.querySelector('.query-text, .user-query-container');
+        textContent = queryText ? queryText.textContent.trim() : '';
+      } else {
+        textContent = Array.from(queryLines)
+          .map(line => line.textContent.trim())
+          .filter(text => text.length > 0)
+          .join('\n');
+      }
+      
+      // Combine images and text
+      return imageMarkdown + textContent;
+    }
+
+    async extractModelResponse(modelResponseElement) {
       if (!modelResponseElement) return '';
       
       const markdownContainer = modelResponseElement.querySelector(CONFIG.SELECTORS.MODEL_RESPONSE_CONTENT);
@@ -318,8 +508,10 @@
       let result = '';
       if (this.turndownService) {
         result = this.turndownService.turndown(markdownContainer.innerHTML);
+        // Process any pending image placeholders
+        result = await this._processImagePlaceholders(result);
       } else {
-        result = FallbackConverter.convertToMarkdown(markdownContainer);
+        result = await FallbackConverter.convertToMarkdown(markdownContainer);
       }
       
       // Remove Gemini citation markers
@@ -332,11 +524,15 @@
   // ============================================================================
   
   class FallbackConverter {
-    static convertToMarkdown(container) {
-      return Array.from(container.childNodes).map(node => this._blockText(node)).join('');
+    static async convertToMarkdown(container) {
+      const results = [];
+      for (const node of container.childNodes) {
+        results.push(await this._blockText(node));
+      }
+      return results.join('');
     }
 
-    static _inlineText(node) {
+    static async _inlineText(node) {
       if (!node) return '';
       if (node.nodeType === Node.TEXT_NODE) return node.textContent || '';
 
@@ -350,20 +546,44 @@
 
       const tag = el.tagName.toLowerCase();
       if (tag === 'br') return '\n';
+      
+      // Handle inline images
+      if (tag === 'img') {
+        try {
+          const base64Url = await ImageUtils.imageToBase64(el);
+          const alt = ImageUtils.getAltText(el);
+          return base64Url ? `![${alt}](${base64Url})` : `[Image: ${alt}]`;
+        } catch (error) {
+          return `[Image: ${ImageUtils.getAltText(el)}]`;
+        }
+      }
+      
       if (tag === 'b' || tag === 'strong') {
-        return `**${Array.from(el.childNodes).map(n => this._inlineText(n)).join('')}**`;
+        const childResults = [];
+        for (const n of el.childNodes) {
+          childResults.push(await this._inlineText(n));
+        }
+        return `**${childResults.join('')}**`;
       }
       if (tag === 'i' || tag === 'em') {
-        return `*${Array.from(el.childNodes).map(n => this._inlineText(n)).join('')}*`;
+        const childResults = [];
+        for (const n of el.childNodes) {
+          childResults.push(await this._inlineText(n));
+        }
+        return `*${childResults.join('')}*`;
       }
       if (tag === 'code') {
         return `\`${el.textContent || ''}\``;
       }
 
-      return Array.from(el.childNodes).map(n => this._inlineText(n)).join('');
+      const childResults = [];
+      for (const n of el.childNodes) {
+        childResults.push(await this._inlineText(n));
+      }
+      return childResults.join('');
     }
 
-    static _blockText(el) {
+    static async _blockText(el) {
       if (!el) return '';
 
       if (el.nodeType === Node.TEXT_NODE) {
@@ -378,55 +598,86 @@
         const latex = el.getAttribute('data-math') || '';
         return `$$${latex}$$\n\n`;
       }
+      
+      // Handle block-level images
+      if (tag === 'img') {
+        try {
+          const base64Url = await ImageUtils.imageToBase64(el);
+          const alt = ImageUtils.getAltText(el);
+          return base64Url ? `![${alt}](${base64Url})\n\n` : `[Image: ${alt}]\n\n`;
+        } catch (error) {
+          return `[Image: ${ImageUtils.getAltText(el)}]\n\n`;
+        }
+      }
 
       const handlers = {
-        h1: () => `# ${this._inlineText(el)}\n\n`,
-        h2: () => `## ${this._inlineText(el)}\n\n`,
-        h3: () => `### ${this._inlineText(el)}\n\n`,
-        h4: () => `#### ${this._inlineText(el)}\n\n`,
-        h5: () => `##### ${this._inlineText(el)}\n\n`,
-        h6: () => `###### ${this._inlineText(el)}\n\n`,
-        p: () => `${this._inlineText(el)}\n\n`,
-        hr: () => `---\n\n`,
-        blockquote: () => this._convertBlockquote(el),
-        pre: () => `\`\`\`\n${el.textContent || ''}\n\`\`\`\n\n`,
-        ul: () => this._convertList(el, false),
-        ol: () => this._convertList(el, true),
-        table: () => this._convertTable(el)
+        h1: async () => `# ${await this._inlineText(el)}\n\n`,
+        h2: async () => `## ${await this._inlineText(el)}\n\n`,
+        h3: async () => `### ${await this._inlineText(el)}\n\n`,
+        h4: async () => `#### ${await this._inlineText(el)}\n\n`,
+        h5: async () => `##### ${await this._inlineText(el)}\n\n`,
+        h6: async () => `###### ${await this._inlineText(el)}\n\n`,
+        p: async () => `${await this._inlineText(el)}\n\n`,
+        hr: async () => `---\n\n`,
+        blockquote: async () => await this._convertBlockquote(el),
+        pre: async () => `\`\`\`\n${el.textContent || ''}\n\`\`\`\n\n`,
+        ul: async () => await this._convertList(el, false),
+        ol: async () => await this._convertList(el, true),
+        table: async () => await this._convertTable(el)
       };
 
       if (handlers[tag]) {
-        return handlers[tag]();
+        return await handlers[tag]();
       }
 
       // Default: process child nodes
-      return Array.from(el.childNodes).map(n => this._blockText(n)).join('');
+      const childResults = [];
+      for (const n of el.childNodes) {
+        childResults.push(await this._blockText(n));
+      }
+      return childResults.join('');
     }
 
-    static _convertBlockquote(el) {
-      const lines = Array.from(el.childNodes).map(n => this._blockText(n)).join('').trim().split('\n');
+    static async _convertBlockquote(el) {
+      const childResults = [];
+      for (const n of el.childNodes) {
+        childResults.push(await this._blockText(n));
+      }
+      const lines = childResults.join('').trim().split('\n');
       return lines.map(line => line ? `> ${line}` : '>').join('\n') + '\n\n';
     }
 
-    static _convertList(el, isOrdered) {
+    static async _convertList(el, isOrdered) {
       const items = Array.from(el.querySelectorAll(':scope > li'));
-      const converted = items.map((li, i) => {
+      const converted = [];
+      for (let i = 0; i < items.length; i++) {
+        const li = items[i];
         const marker = isOrdered ? `${i + 1}.` : '-';
-        return `${marker} ${this._inlineText(li).trim()}`;
-      }).join('\n');
-      return `${converted}\n\n`;
+        const text = await this._inlineText(li);
+        converted.push(`${marker} ${text.trim()}`);
+      }
+      return `${converted.join('\n')}\n\n`;
     }
 
-    static _convertTable(el) {
+    static async _convertTable(el) {
       const rows = Array.from(el.querySelectorAll('tr'));
       if (!rows.length) return '';
       
-      const getCells = row => Array.from(row.querySelectorAll('th,td'))
-        .map(cell => this._inlineText(cell).replace(/\n/g, ' ').trim());
+      const getCells = async (row) => {
+        const cells = [];
+        for (const cell of row.querySelectorAll('th,td')) {
+          const text = await this._inlineText(cell);
+          cells.push(text.replace(/\n/g, ' ').trim());
+        }
+        return cells;
+      };
       
-      const header = getCells(rows[0]);
+      const header = await getCells(rows[0]);
       const separator = header.map(() => '---');
-      const body = rows.slice(1).map(getCells);
+      const body = [];
+      for (const row of rows.slice(1)) {
+        body.push(await getCells(row));
+      }
       
       const lines = [
         `| ${header.join(' | ')} |`,
@@ -784,7 +1035,7 @@ ${code}\n\
         if (userQueryElem) {
           const cb = userQueryElem.querySelector(`.${CONFIG.CHECKBOX_CLASS}`);
           if (cb?.checked) {
-            const userQuery = this.markdownConverter.extractUserQuery(userQueryElem);
+            const userQuery = await this.markdownConverter.extractUserQuery(userQueryElem);
             if (userQuery) {
               markdown += `## 👤 You\n\n${userQuery}\n\n`;
             }
@@ -796,7 +1047,7 @@ ${code}\n\
         if (modelRespElem) {
           const cb = modelRespElem.querySelector(`.${CONFIG.CHECKBOX_CLASS}`);
           if (cb?.checked) {
-            const modelResponse = this.markdownConverter.extractModelResponse(modelRespElem);
+            const modelResponse = await this.markdownConverter.extractModelResponse(modelRespElem);
             if (modelResponse) {
               markdown += `## 🤖 Gemini\n\n${modelResponse}\n\n`;
             } else {
