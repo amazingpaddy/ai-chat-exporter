@@ -22,7 +22,7 @@
       USER_QUERY_TEXT: '.query-text .query-text-line',
       MODEL_RESPONSE: 'model-response',
       MODEL_RESPONSE_CONTENT: 'message-content .markdown',
-      CONVERSATION_TITLE: '.conversation-title'
+      CONVERSATION_TITLE: '[data-test-id="conversation-title"]'
     },
     
     TIMING: {
