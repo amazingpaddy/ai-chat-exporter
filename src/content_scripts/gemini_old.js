@@ -23,7 +23,7 @@
       USER_QUERY: 'user-query',
       MODEL_RESPONSE: 'model-response',
       COPY_BUTTON: 'button[data-test-id="copy-button"]',
-      CONVERSATION_TITLE: '.conversation-title'
+      CONVERSATION_TITLE: '[data-test-id="conversation-title"]'
     },
     
     TIMING: {
