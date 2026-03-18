@@ -20,9 +20,9 @@
     EXPORT_MODE_NAME: 'chatgpt-export-mode',
 
     SELECTORS: {
-      CONVERSATION_TURN: 'article[data-testid^="conversation-turn-"]',
-      USER_HEADING: 'h5.sr-only',
-      MODEL_HEADING: 'h6.sr-only',
+      CONVERSATION_TURN: 'section[data-testid^="conversation-turn-"]',
+      USER_HEADING: 'h4.sr-only',
+      MODEL_HEADING: 'h4.sr-only',
       COPY_BUTTON: 'button[data-testid="copy-turn-action-button"]',
       THREAD_TITLE: 'main h1'
     },
@@ -33,7 +33,8 @@
       'div.flex.h-full.flex-col.overflow-y-auto',
       'div.flex.h-full.w-full.flex-col.overflow-y-auto',
       'main div.flex-1.overflow-y-auto',
-      'main div.overflow-y-auto'
+      'main div.overflow-y-auto',
+      'div#thread'
     ],
 
     TIMING: {
@@ -136,14 +137,20 @@
       const turns = document.querySelectorAll(CONFIG.SELECTORS.CONVERSATION_TURN);
 
       turns.forEach(turn => {
-        const userHeading = turn.querySelector(CONFIG.SELECTORS.USER_HEADING);
-        if (userHeading && !turn.querySelector(`.${CONFIG.CHECKBOX_CLASS}.user`)) {
-          this.create(turn, 'user', '8px');
-        }
-
-        const modelHeading = turn.querySelector(CONFIG.SELECTORS.MODEL_HEADING);
-        if (modelHeading && !turn.querySelector(`.${CONFIG.CHECKBOX_CLASS}.model`)) {
-          this.create(turn, 'model', '36px');
+        switch (turn.getAttribute('data-turn')) {
+            case 'user':
+                if (!turn.querySelector(`.${CONFIG.CHECKBOX_CLASS}.user`)) {
+                    this.create(turn, 'user', '8px');
+                }
+                break;
+            case 'assistant':
+                if (!turn.querySelector(`.${CONFIG.CHECKBOX_CLASS}.model`)) {
+                    this.create(turn, 'model', '36px');
+                }
+                break;
+            default:
+                console.warn(`Unknown turn type: ${turn.getAttribute('data-turn')}`);
+                break;
         }
       });
     }
