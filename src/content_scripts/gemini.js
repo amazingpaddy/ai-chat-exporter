@@ -22,7 +22,8 @@
       USER_QUERY_TEXT: '.query-text .query-text-line',
       MODEL_RESPONSE: 'model-response',
       MODEL_RESPONSE_CONTENT: 'message-content .markdown',
-      CONVERSATION_TITLE: '[data-test-id="conversation-title"]'
+      CONVERSATION_TITLE: '[data-test-id="conversation-title"]',
+      SOURCE_CHIP: 'source-inline-chip' // Selector for citation badges (+1, +2, etc.)
     },
     
     TIMING: {
@@ -80,6 +81,8 @@
       return text
         .replace(/\[cite_start\]/g, '')
         .replace(/\[cite:[\d,\s]+\]/g, '')
+        // Note: Numerical markers like +1 are now handled via DOM pruning in extractModelResponse
+        // to avoid any conflict with mathematical expressions like "x + 2"
         .replace(/\n{3,}/g, '\n\n')
         .trim();
     }
@@ -258,6 +261,18 @@
         }
       });
 
+      service.addRule('sourceChip', {
+        // Exclude citation badges (+1, +2, etc.) by skipping source-inline-chip elements
+        // Robust check using nodeName and selector
+        filter: node => {
+          return node.nodeType === 1 && (
+            node.nodeName === 'SOURCE-INLINE-CHIP' || 
+            node.matches?.(CONFIG.SELECTORS.SOURCE_CHIP)
+          );
+        },
+        replacement: () => ''
+      });
+
       service.addRule('table', {
         filter: 'table',
         replacement: (content, node) => {
@@ -266,7 +281,8 @@
 
           const getCells = row => {
             return Array.from(row.querySelectorAll('th, td')).map(cell => {
-              const cellContent = service.turndown(cell.innerHTML);
+              // Pass the cell element instead of innerHTML to preserve custom element rules
+              const cellContent = service.turndown(cell);
               return cellContent.replace(/\n+/g, ' ').replace(/\|/g, '\\|').trim();
             });
           };
@@ -315,14 +331,23 @@
       const markdownContainer = modelResponseElement.querySelector(CONFIG.SELECTORS.MODEL_RESPONSE_CONTENT);
       if (!markdownContainer) return '';
 
+      // Clone the container to perform clean-up without modifying the actual UI
+      const clone = markdownContainer.cloneNode(true);
+      
+      // Remove all citation chips from the clone before processing.
+      // This is the safest way to remove +1/+2 markers without touching math like "x + 2"
+      const chips = clone.querySelectorAll(CONFIG.SELECTORS.SOURCE_CHIP + ', source-inline-chip');
+      chips.forEach(chip => chip.remove());
+
       let result = '';
       if (this.turndownService) {
-        result = this.turndownService.turndown(markdownContainer.innerHTML);
+        // Pass the cleaned DOM clone to Turndown
+        result = this.turndownService.turndown(clone);
       } else {
-        result = FallbackConverter.convertToMarkdown(markdownContainer);
+        result = FallbackConverter.convertToMarkdown(clone);
       }
       
-      // Remove Gemini citation markers
+      // Remove other known citation patterns (backward compatibility)
       return StringUtils.removeCitations(result);
     }
   }
@@ -346,6 +371,11 @@
       if (el.matches?.(CONFIG.MATH_INLINE_SELECTOR)) {
         const latex = el.getAttribute('data-math') || '';
         return `$${latex}$`;
+      }
+      
+      // Skip citation elements to prevent "noisy" exports
+      if (el.nodeName === 'SOURCE-INLINE-CHIP' || el.matches?.(CONFIG.SELECTORS.SOURCE_CHIP)) {
+        return '';
       }
 
       const tag = el.tagName.toLowerCase();
@@ -371,6 +401,12 @@
       }
 
       if (el.nodeType !== Node.ELEMENT_NODE) return '';
+
+      // Skip citation elements to ensure mathematical expressions like "1 + 2" are not affected
+      // Added nodeName check for robust tag matching
+      if (el.nodeName === 'SOURCE-INLINE-CHIP' || el.matches?.(CONFIG.SELECTORS.SOURCE_CHIP)) {
+        return '';
+      }
 
       const tag = el.tagName.toLowerCase();
 
@@ -668,6 +704,11 @@
       return `$${latex}$`;
     }
 
+    // Skip citation elements to ensure mathematical expressions like "1 + 2" are not affected
+    if (el.nodeName === 'SOURCE-INLINE-CHIP' || el.matches(CONFIG.SELECTORS.SOURCE_CHIP)) {
+      return '';
+    }
+
     const tag = el.tagName.toLowerCase();
     if (tag === 'br') return '\n';
     if (tag === 'b' || tag === 'strong') {
@@ -691,6 +732,11 @@
     }
 
     if (el.nodeType !== Node.ELEMENT_NODE) return '';
+
+    // Skip citation elements to ensure mathematical expressions like "1 + 2" are not affected
+    if (el.nodeName === 'SOURCE-INLINE-CHIP' || el.matches(CONFIG.SELECTORS.SOURCE_CHIP)) {
+      return '';
+    }
 
     const tag = el.tagName.toLowerCase();
 
